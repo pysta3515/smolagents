@@ -800,6 +800,39 @@ class TestCodeAgent:
             agent.run("Test request")
         assert "secret\\\\" in repr(capture.get())
 
+    def test_change_tools_after_init(self):
+        from smolagents import Tool, tool
+
+        @tool
+        def fake_tool_1() -> str:
+            return "1"
+
+        @tool
+        def fake_tool_2() -> str:
+            return "2"
+
+        def fake_code_model(messages, stop_sequences=None, grammar=None) -> str:
+            return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
+
+        agent = CodeAgent(tools=[fake_tool_1], model=fake_code_model, verbosity_level=1)
+
+        class ModifiedFinalAnswerTool(Tool):
+            name = "final_answer"
+            description = "Provides a final answer to the given problem."
+            inputs = {"answer_function": {"type": "any", "description": "The final function that solves the problem"}}
+            output_type = "string"
+
+            def forward(self, answer) -> str:
+                return answer + "FLAG"
+
+        agent.tools["final_answer"] = ModifiedFinalAnswerTool()
+        agent.tools["fake_tool_1"] = fake_tool_2
+
+        answer = agent.run("Fake task.")
+        assert answer == "2FLAG"
+
+        agent = CodeAgent(tools=[], model=fake_code_model, verbosity_level=1)
+
 
 class MultiAgentsTests(unittest.TestCase):
     def test_multiagents_save(self):
