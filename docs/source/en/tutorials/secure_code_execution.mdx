@@ -145,6 +145,7 @@ agent = CodeAgent(
 manager_agent = CodeAgent(
     model=HfApiModel(token=os.getenv("HF_TOKEN"), provider="together"),
     tools=[],
+    managed_agents=[agent],
 )
 
 # Run the agent
