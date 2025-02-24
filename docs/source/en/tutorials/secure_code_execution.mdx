@@ -275,23 +275,20 @@ finally:
 
 These key practices apply to both E2B and Docker sandboxes:
 
-#### Resource management
-- Set memory and CPU limits
-- Implement execution timeouts
-- Monitor resource usage
+- Resource management
+  - Set memory and CPU limits
+  - Implement execution timeouts
+  - Monitor resource usage
+- Security
+  - Run with minimal privileges
+  - Disable unnecessary network access
+  - Use environment variables for secrets
+- Environment
+  - Keep dependencies minimal
+  - Use fixed package versions
+  - If you use base images, update them regularly
 
-#### Security
-- Run with minimal privileges
-- Disable unnecessary network access
-- Use environment variables for secrets
-
-#### Environment
-- Keep dependencies minimal
-- Use fixed package versions
-- If you use base images, update them regularly
-
-#### Cleanup
-
-Always ensure proper cleanup of resources, especially for Docker containers, to avoid having dangling containers eating up resources.
+- Cleanup
+  - Always ensure proper cleanup of resources, especially for Docker containers, to avoid having dangling containers eating up resources.
 
 ✨ By following these practices and implementing proper cleanup procedures, you can ensure your agent runs safely and efficiently in a sandboxed environment.
