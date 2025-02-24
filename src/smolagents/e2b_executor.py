@@ -83,27 +83,7 @@ class E2BExecutor:
             raise ValueError(logs)
         return execution
 
-    def __call__(self, code_action: str, additional_args: Dict[str, Any], tools: Dict[str, Tool]) -> Tuple[Any, Any]:
-        if len(additional_args) > 0:
-            # Pickle additional_args to server
-            import tempfile
-
-            with tempfile.NamedTemporaryFile() as f:
-                pickle.dump(additional_args, f)
-                f.flush()
-                with open(f.name, "rb") as file:
-                    self.sbx.files.write("/home/state.pkl", file)
-            remote_unloading_code = """import pickle
-import os
-print("File path", os.path.getsize('/home/state.pkl'))
-with open('/home/state.pkl', 'rb') as f:
-    pickle_dict = pickle.load(f)
-locals().update({key: value for key, value in pickle_dict.items()})
-"""
-            execution = self.run_code_raise_errors(remote_unloading_code)
-            execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
-            self.logger.log(execution_logs, 1)
-
+    def update_tools(self, tools: Dict[str, Tool]):
         tool_codes = []
         for tool in tools.values():
             validate_tool_attributes(tool.__class__, check_imports=False)
@@ -125,7 +105,31 @@ locals().update({key: value for key, value in pickle_dict.items()})
         )
         tool_definition_code += "\n\n".join(tool_codes)
 
-        execution = self.run_code_raise_errors(tool_definition_code + code_action)
+        execution = self.run_code_raise_errors(tool_definition_code)
+        self.logger.log(execution.logs)
+
+    def __call__(self, code_action: str, additional_args: Dict[str, Any]) -> Tuple[Any, Any]:
+        if len(additional_args) > 0:
+            # Pickle additional_args to server
+            import tempfile
+
+            with tempfile.NamedTemporaryFile() as f:
+                pickle.dump(additional_args, f)
+                f.flush()
+                with open(f.name, "rb") as file:
+                    self.sbx.files.write("/home/state.pkl", file)
+            remote_unloading_code = """import pickle
+import os
+print("File path", os.path.getsize('/home/state.pkl'))
+with open('/home/state.pkl', 'rb') as f:
+    pickle_dict = pickle.load(f)
+locals().update({key: value for key, value in pickle_dict.items()})
+"""
+            execution = self.run_code_raise_errors(remote_unloading_code)
+            execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
+            self.logger.log(execution_logs, 1)
+
+        execution = self.run_code_raise_errors(code_action)
         self.logger.log(execution.logs)
         execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
         if not execution.results:

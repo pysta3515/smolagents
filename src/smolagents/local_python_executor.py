@@ -1430,14 +1430,13 @@ class LocalPythonInterpreter:
         self.additional_authorized_imports = additional_authorized_imports
         self.authorized_imports = list(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         # TODO: assert self.authorized imports are all installed locally
+        self.static_tools = None
 
-    def __call__(
-        self, code_action: str, additional_variables: Dict[str, Any], tools: Dict[str, Tool]
-    ) -> Tuple[Any, str, bool]:
+    def __call__(self, code_action: str, additional_variables: Dict[str, Any]) -> Tuple[Any, str, bool]:
         self.state.update(additional_variables)
         output, is_final_answer = evaluate_python_code(
             code_action,
-            static_tools={**tools, **BASE_PYTHON_TOOLS.copy()},
+            static_tools=self.static_tools,
             custom_tools=self.custom_tools,
             state=self.state,
             authorized_imports=self.authorized_imports,
@@ -1445,6 +1444,9 @@ class LocalPythonInterpreter:
         )
         logs = str(self.state["_print_outputs"])
         return output, logs, is_final_answer
+
+    def update_tools(self, tools: Dict[str, Tool]):
+        self.static_tools = {**tools, **BASE_PYTHON_TOOLS.copy()}
 
 
 __all__ = ["evaluate_python_code", "LocalPythonInterpreter"]
