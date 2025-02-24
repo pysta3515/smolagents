@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
 
+from .tools import Tool
 from .utils import BASE_BUILTIN_MODULES, truncate_content
 
 
@@ -1419,7 +1420,6 @@ class LocalPythonInterpreter:
     def __init__(
         self,
         additional_authorized_imports: List[str],
-        tools: Dict,
         max_print_outputs_length: Optional[int] = None,
     ):
         self.custom_tools = {}
@@ -1429,18 +1429,15 @@ class LocalPythonInterpreter:
             self.max_print_outputs_length = DEFAULT_MAX_LEN_OUTPUT
         self.additional_authorized_imports = additional_authorized_imports
         self.authorized_imports = list(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
-        # Add base trusted tools to list
-        self.static_tools = {
-            **tools,
-            **BASE_PYTHON_TOOLS.copy(),
-        }
         # TODO: assert self.authorized imports are all installed locally
 
-    def __call__(self, code_action: str, additional_variables: Dict) -> Tuple[Any, str, bool]:
+    def __call__(
+        self, code_action: str, additional_variables: Dict[str, Any], tools: Dict[str, Tool]
+    ) -> Tuple[Any, str, bool]:
         self.state.update(additional_variables)
         output, is_final_answer = evaluate_python_code(
             code_action,
-            static_tools=self.static_tools,
+            static_tools={**tools, **BASE_PYTHON_TOOLS.copy()},
             custom_tools=self.custom_tools,
             state=self.state,
             authorized_imports=self.authorized_imports,

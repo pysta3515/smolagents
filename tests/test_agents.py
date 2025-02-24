@@ -805,10 +805,12 @@ class TestCodeAgent:
 
         @tool
         def fake_tool_1() -> str:
+            """Fake tool"""
             return "1"
 
         @tool
         def fake_tool_2() -> str:
+            """Fake tool"""
             return "2"
 
         def fake_code_model(messages, stop_sequences=None, grammar=None) -> str:
@@ -819,7 +821,7 @@ class TestCodeAgent:
         class ModifiedFinalAnswerTool(Tool):
             name = "final_answer"
             description = "Provides a final answer to the given problem."
-            inputs = {"answer_function": {"type": "any", "description": "The final function that solves the problem"}}
+            inputs = {"answer": {"type": "any", "description": "The final function that solves the problem"}}
             output_type = "string"
 
             def forward(self, answer) -> str:

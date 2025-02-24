@@ -1175,17 +1175,14 @@ class CodeAgent(MultiStepAgent):
                 f"You passed both {use_e2b_executor=} and some managed agents. Managed agents is not yet supported with remote code execution."
             )
 
-        all_tools = {**self.tools, **self.managed_agents}
         if use_e2b_executor:
             self.python_executor = E2BExecutor(
                 self.additional_authorized_imports,
-                list(all_tools.values()),
                 self.logger,
             )
         else:
             self.python_executor = LocalPythonInterpreter(
                 self.additional_authorized_imports,
-                all_tools,
                 max_print_outputs_length=max_print_outputs_length,
             )
 
@@ -1254,8 +1251,7 @@ class CodeAgent(MultiStepAgent):
         is_final_answer = False
         try:
             output, execution_logs, is_final_answer = self.python_executor(
-                code_action,
-                self.state,
+                code_action, self.state, {**self.tools, **self.managed_agents}
             )
             execution_outputs_console = []
             if len(execution_logs) > 0:
