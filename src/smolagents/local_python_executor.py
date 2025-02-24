@@ -1444,8 +1444,10 @@ class LocalPythonInterpreter:
         logs = str(self.state["_print_outputs"])
         return output, logs, is_final_answer
 
-    def update_remote(self, state: dict, tools: Dict[str, Tool]):
-        self.state = state
+    def send_variables(self, variables: dict):
+        self.state.update(variables)
+
+    def send_tools(self, tools: Dict[str, Tool]):
         self.static_tools = {**tools, **BASE_PYTHON_TOOLS.copy()}
 
 

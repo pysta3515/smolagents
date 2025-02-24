@@ -1,17 +1,148 @@
+#!/usr/bin/env python
+# coding=utf-8
+
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import base64
 import json
 import pickle
 import re
 import time
+from io import BytesIO
 from pathlib import Path
-from typing import Any, List, Tuple, Dict
+from typing import Any, Dict, List, Tuple
 
 import docker
 import requests
+from PIL import Image
 
 from .tools import Tool, get_tools_definition_code
 
-class DockerExecutor:
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
+
+
+class Executor:
+    def __init__(self, additional_imports: List[str], logger):
+        self.logger = logger
+        self.logger.log("Initializing executor, hold on...")
+        self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$")
+
+    def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
+        raise NotImplementedError
+
+    def send_tools(self, tools: Dict[str, Tool]):
+        tool_definition_code = get_tools_definition_code(tools)
+
+        packages_to_install = set()
+        for tool in tools.values():
+            for package in tool.to_dict()["requirements"]:
+                if package not in self.installed_packages:
+                    packages_to_install.add(package)
+                    self.installed_packages.append(package)
+
+        execution = self.run_code_raise_errors(
+            f"!pip install {' '.join(packages_to_install)}\n" + tool_definition_code
+        )
+        self.logger.log(execution[1])
+
+    def send_variables(self, variables: dict):
+        """
+        Send variables to the kernel namespace using pickle.
+        """
+        pickled_vars = base64.b64encode(pickle.dumps(variables)).decode()
+        code = f"""
+import pickle, base64
+vars_dict = pickle.loads(base64.b64decode('{pickled_vars}'))
+locals().update(vars_dict)
+"""
+        self.run_code_raise_errors(code)
+
+    def __call__(self, code_action: str) -> Tuple[Any, str, bool]:
+        """Check if code is a final answer and run it accordingly"""
+        is_final_answer = bool(self.final_answer_pattern.match(code_action))
+        output = self.run_code_raise_errors(code_action, return_final_answer=is_final_answer)
+        return output[0], output[1], is_final_answer
+
+    def install_packages(self, additional_imports: List[str]):
+        additional_imports = additional_imports + ["smolagents"]
+        self.run_code_raise_errors(f"!pip install {' '.join(additional_imports)}")
+        return additional_imports
+
+
+class E2BExecutor(Executor):
+    def __init__(self, additional_imports: List[str], logger):
+        super().__init__(additional_imports, logger)
+        try:
+            from e2b_code_interpreter import Sandbox
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                """Please install 'e2b' extra to use E2BExecutor: `pip install "smolagents[e2b]"`"""
+            )
+        self.sbx = Sandbox()  # "qywp2ctmu2q7jzprcf4j")
+        self.installed_packages = self.install_packages(additional_imports)
+        self.logger.log("E2B is running", level=1)
+
+    def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str]:
+        execution = self.sbx.run_code(
+            code,
+        )
+        if execution.error:
+            execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
+            logs = execution_logs
+            logs += "Executing code yielded an error:"
+            logs += execution.error.name
+            logs += execution.error.value
+            logs += execution.error.traceback
+            raise ValueError(logs)
+        self.logger.log(execution.logs)
+        execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
+        if not execution.results:
+            return None, execution_logs
+        else:
+            for result in execution.results:
+                if result.is_main_result:
+                    for attribute_name in ["jpeg", "png"]:
+                        if getattr(result, attribute_name) is not None:
+                            image_output = getattr(result, attribute_name)
+                            decoded_bytes = base64.b64decode(image_output.encode("utf-8"))
+                            return Image.open(BytesIO(decoded_bytes)), execution_logs
+                    for attribute_name in [
+                        "chart",
+                        "data",
+                        "html",
+                        "javascript",
+                        "json",
+                        "latex",
+                        "markdown",
+                        "pdf",
+                        "svg",
+                        "text",
+                    ]:
+                        if getattr(result, attribute_name) is not None:
+                            return getattr(result, attribute_name), execution_logs
+            if return_final_answer:
+                raise ValueError("No main result returned by executor!")
+            return None, execution_logs
+
+
+class DockerExecutor(Executor):
     """
     Executes Python code using Jupyter Kernel Gateway in a Docker container.
     """
@@ -19,19 +150,16 @@ class DockerExecutor:
     def __init__(
         self,
         additional_imports: List[str],
-        tools,
         logger,
-        initial_state: dict = None,
         host: str = "127.0.0.1",
         port: int = 8888,
     ):
         """
         Initialize the Docker-based Jupyter Kernel Gateway executor.
         """
-        self.logger = logger
+        super().__init__(additional_imports, logger)
         self.host = host
         self.port = port
-        self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$")
 
         # Initialize Docker
         try:
@@ -93,26 +221,15 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
 
             ws_url = f"ws://{host}:{port}/api/kernels/{self.kernel_id}/channels"
             self.ws = create_connection(ws_url)
+
             # Install additional packages
-
-            for package in additional_imports:
-                self.run_code_raise_errors(f"!pip install {package}")
-
-            # Initialize state if provided
-            if initial_state:
-                self.send_variables_to_kernel(initial_state)
-
+            self.installed_packages = self.install_packages(additional_imports)
             self.logger.log(f"Container {self.container.short_id} is running with kernel {self.kernel_id}", level=1)
 
         except Exception as e:
             self.cleanup()
             # Re-raise with the original traceback preserved
             raise RuntimeError(f"Failed to initialize Jupyter kernel: {e}") from e
-
-
-    def __call__(self, code_action: str) -> Tuple[Any, str, bool]:
-        """Check if code is a final answer and run it accordingly"""
-        return self.run_code_raise_errors(code_action, return_final_answer=bool(self.final_answer_pattern.match(code_action)))
 
     def run_code_raise_errors(self, code_action: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
         """
@@ -163,28 +280,11 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
                     if not return_final_answer or waiting_for_idle:
                         break
 
-            return result, "".join(outputs), return_final_answer
+            return result, "".join(outputs)
 
         except Exception as e:
             self.logger.log_error(f"Code execution failed: {e}")
             raise
-
-    def send_variables(self, variables: dict):
-        """
-        Send variables to the kernel namespace using pickle.
-        """
-        pickled_vars = base64.b64encode(pickle.dumps(variables)).decode()
-        code = f"""
-import pickle, base64
-vars_dict = pickle.loads(base64.b64decode('{pickled_vars}'))
-globals().update(vars_dict)
-"""
-        self.run_code_raise_errors(code)
-    
-    def send_tools(self, tools: Dict[str, Tool]):
-        tool_definition_code = get_tools_definition_code(tools)
-        execution = self.run_code_raise_errors(tool_definition_code)
-        self.logger.log(execution.logs)
 
     def download_variable(self, var_name: str) -> Any:
         """
@@ -243,3 +343,6 @@ print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
     def __del__(self):
         """Ensure cleanup on deletion."""
         self.cleanup()
+
+
+__all__ = ["E2BExecutor", "DockerExecutor"]

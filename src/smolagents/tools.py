@@ -45,7 +45,7 @@ from ._function_type_hints_utils import (
 )
 from .agent_types import handle_agent_input_types, handle_agent_output_types
 from .tool_validation import MethodChecker, validate_tool_attributes
-from .utils import _is_package_available, _is_pillow_available, get_source, instance_to_source, BASE_BUILTIN_MODULES
+from .utils import BASE_BUILTIN_MODULES, _is_package_available, _is_pillow_available, get_source, instance_to_source
 
 
 logger = logging.getLogger(__name__)
@@ -1043,6 +1043,8 @@ def get_tools_definition_code(tools: Dict[str, Tool]) -> str:
     tool_definition_code = "\n".join([f"import {module}" for module in BASE_BUILTIN_MODULES])
     tool_definition_code += textwrap.dedent(
         """
+    from typing import Any
+
     class Tool:
         def __call__(self, *args, **kwargs):
             return self.forward(*args, **kwargs)
@@ -1053,6 +1055,7 @@ def get_tools_definition_code(tools: Dict[str, Tool]) -> str:
     )
     tool_definition_code += "\n\n".join(tool_codes)
     return tool_definition_code
+
 
 __all__ = [
     "AUTHORIZED_TYPES",

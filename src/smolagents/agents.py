@@ -38,8 +38,6 @@ from rich.text import Text
 
 from .agent_types import AgentAudio, AgentImage, AgentType, handle_agent_output_types
 from .default_tools import TOOL_MAPPING, FinalAnswerTool
-from .docker_executor import DockerExecutor
-from .e2b_executor import E2BExecutor
 from .local_python_executor import (
     BASE_BUILTIN_MODULES,
     LocalPythonInterpreter,
@@ -57,6 +55,7 @@ from .monitoring import (
     LogLevel,
     Monitor,
 )
+from .remote_executors import DockerExecutor, E2BExecutor
 from .tools import Tool
 from .utils import (
     AgentError,
@@ -1181,25 +1180,16 @@ class CodeAgent(MultiStepAgent):
         if (use_e2b_executor or use_docker_executor) and len(self.managed_agents) > 0:
             raise Exception("Managed agents are not yet supported with remote code execution.")
 
-        all_tools = {**self.tools, **self.managed_agents}
-
         # Initialize the appropriate executor
         if use_e2b_executor:
-            self.python_executor = E2BExecutor(
-                self.additional_authorized_imports, list(all_tools.values()), self.logger, initial_state=self.state
-            )
+            self.python_executor = E2BExecutor(self.additional_authorized_imports, self.logger)
         elif use_docker_executor:
-            self.python_executor = DockerExecutor(
-                self.additional_authorized_imports, list(all_tools.values()), self.logger, initial_state=self.state
-            )
+            self.python_executor = DockerExecutor(self.additional_authorized_imports, self.logger)
         else:
             self.python_executor = LocalPythonInterpreter(
                 self.additional_authorized_imports,
-                all_tools,
-                initial_state=self.state,
                 max_print_outputs_length=max_print_outputs_length,
             )
-
 
     def initialize_system_prompt(self) -> str:
         system_prompt = populate_template(
