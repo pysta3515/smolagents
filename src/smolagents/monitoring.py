@@ -27,7 +27,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from smolagents.utils import escape_code_brackets, in_notebook
+from smolagents.utils import escape_code_brackets
 
 
 __all__ = ["AgentLogger", "LogLevel", "Monitor"]
@@ -86,7 +86,7 @@ YELLOW_HEX = "#d4b702"
 class AgentLogger:
     def __init__(self, level: LogLevel = LogLevel.INFO):
         self.level = level
-        self.console = Console(width=100 if in_notebook() else None)
+        self.console = Console()
 
     def log(self, *args, level: str | LogLevel = LogLevel.INFO, **kwargs) -> None:
         """Logs a message to the console.

@@ -22,7 +22,6 @@ import inspect
 import json
 import os
 import re
-import sys
 import textwrap
 import types
 from functools import lru_cache
@@ -438,11 +437,3 @@ def make_init_file(folder: str):
     # Create __init__
     with open(os.path.join(folder, "__init__.py"), "w"):
         pass
-
-
-def in_notebook():
-    """
-    Returns ``True`` if the module is running in IPython kernel,
-    ``False`` if in IPython shell or other Python shell.
-    """
-    return "ipykernel" in sys.modules
