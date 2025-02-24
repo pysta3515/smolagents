@@ -1384,8 +1384,10 @@ def evaluate_python_code(
     result = None
     state["_print_outputs"] = PrintContainer()
 
+    previous_final_answer = static_tools["final_answer"]
+
     def final_answer(value):
-        raise FinalAnswerException(value)
+        raise FinalAnswerException(previous_final_answer(value))
 
     static_tools["final_answer"] = final_answer
 
