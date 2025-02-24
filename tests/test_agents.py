@@ -814,7 +814,7 @@ class TestCodeAgent:
         def fake_code_model(messages, stop_sequences=None, grammar=None) -> str:
             return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
 
-        agent = CodeAgent(tools=[fake_tool_1], model=fake_code_model, verbosity_level=1)
+        agent = CodeAgent(tools=[fake_tool_1], model=fake_code_model)
 
         class ModifiedFinalAnswerTool(Tool):
             name = "final_answer"
@@ -831,7 +831,7 @@ class TestCodeAgent:
         answer = agent.run("Fake task.")
         assert answer == "2FLAG"
 
-        agent = CodeAgent(tools=[], model=fake_code_model, verbosity_level=1)
+        agent = CodeAgent(tools=[], model=fake_code_model)
 
 
 class MultiAgentsTests(unittest.TestCase):
