@@ -316,8 +316,10 @@ You have been provided with these additional arguments, that you can access usin
             level=LogLevel.INFO,
             title=self.name if hasattr(self, "name") else None,
         )
-
         self.memory.steps.append(TaskStep(task=self.task, task_images=images))
+
+        if getattr(self, "python_executor", None):
+            self.python_executor.update_tools({**self.tools, **self.managed_agents})
 
         if stream:
             # The steps are returned as they are executed through a generator to iterate on.
