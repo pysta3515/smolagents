@@ -340,7 +340,7 @@ print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
         except Exception as e:
             self.logger.log_error(f"Error during cleanup: {e}")
 
-    def __del__(self):
+    def delete(self):
         """Ensure cleanup on deletion."""
         self.cleanup()
 

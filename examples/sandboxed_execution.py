@@ -1,4 +1,5 @@
-from smolagents import CodeAgent, HfApiModel, CodeAgent, DuckDuckGoSearchTool
+from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel
+
 
 model = HfApiModel()
 
