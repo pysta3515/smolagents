@@ -319,7 +319,8 @@ You have been provided with these additional arguments, that you can access usin
         self.memory.steps.append(TaskStep(task=self.task, task_images=images))
 
         if getattr(self, "python_executor", None):
-            self.python_executor.update_tools({**self.tools, **self.managed_agents})
+            self.python_executor.send_variables(variables=self.state)
+            self.python_executor.send_tools({**self.tools, **self.managed_agents})
 
         if stream:
             # The steps are returned as they are executed through a generator to iterate on.
@@ -1199,9 +1200,6 @@ class CodeAgent(MultiStepAgent):
                 max_print_outputs_length=max_print_outputs_length,
             )
 
-    @property
-    def state(self):
-        return self.python_executor.state
 
     def initialize_system_prompt(self) -> str:
         system_prompt = populate_template(

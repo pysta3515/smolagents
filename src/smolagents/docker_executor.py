@@ -4,11 +4,12 @@ import pickle
 import re
 import time
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Dict
 
 import docker
 import requests
 
+from .tools import Tool, get_tools_definition_code
 
 class DockerExecutor:
     """
@@ -41,7 +42,7 @@ class DockerExecutor:
         # Build and start container
         try:
             # Build the Docker image
-            self.logger.info("Building Docker image...")
+            self.logger.log("Building Docker image...", level=1)
             dockerfile_path = Path(__file__).parent / "Dockerfile"
             if not dockerfile_path.exists():
                 with open(dockerfile_path, "w") as f:
@@ -58,13 +59,13 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             )
             # Run the container
 
-            self.logger.info(f"Starting container on {host}:{port}...")
+            self.logger.log(f"Starting container on {host}:{port}...", level=1)
             self.container = self.client.containers.run(
                 "jupyter-kernel", ports={"8888/tcp": (host, port)}, detach=True
             )
             # Wait for kernel gateway to start
 
-            self.logger.info("Waiting for kernel gateway to start...")
+            self.logger.log("Waiting for kernel gateway to start...", level=1)
             time.sleep(2)
             # Initialize kernel session
 
@@ -82,7 +83,7 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
                     "request_headers": dict(r.request.headers),
                     "request_body": r.request.body,
                 }
-                self.logger.error(f"Failed to create kernel. Details: {json.dumps(error_details, indent=2)}")
+                self.logger.log_error(f"Failed to create kernel. Details: {json.dumps(error_details, indent=2)}")
                 raise RuntimeError(f"Failed to create kernel: Status {r.status_code}\nResponse: {r.text}") from None
 
             self.kernel_id = r.json()["id"]
@@ -95,29 +96,25 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             # Install additional packages
 
             for package in additional_imports:
-                self.execute_code(f"!pip install {package}")
+                self.run_code_raise_errors(f"!pip install {package}")
 
             # Initialize state if provided
             if initial_state:
                 self.send_variables_to_kernel(initial_state)
 
-            self.logger.info(f"Container {self.container.short_id} is running with kernel {self.kernel_id}")
+            self.logger.log(f"Container {self.container.short_id} is running with kernel {self.kernel_id}", level=1)
 
         except Exception as e:
             self.cleanup()
             # Re-raise with the original traceback preserved
             raise RuntimeError(f"Failed to initialize Jupyter kernel: {e}") from e
 
-    def execute_code(self, code: str) -> str:
-        """Execute code and return output"""
-        result, output, _ = self.run_code(code)
-        return output
 
     def __call__(self, code_action: str) -> Tuple[Any, str, bool]:
         """Check if code is a final answer and run it accordingly"""
-        return self.run_code(code_action, return_final_answer=bool(self.final_answer_pattern.match(code_action)))
+        return self.run_code_raise_errors(code_action, return_final_answer=bool(self.final_answer_pattern.match(code_action)))
 
-    def run_code(self, code_action: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
+    def run_code_raise_errors(self, code_action: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
         """
         Execute code and return result based on whether it's a final answer.
         """
@@ -169,10 +166,10 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             return result, "".join(outputs), return_final_answer
 
         except Exception as e:
-            self.logger.error(f"Code execution failed: {e}")
+            self.logger.log_error(f"Code execution failed: {e}")
             raise
 
-    def send_variables_to_kernel(self, variables: dict):
+    def send_variables(self, variables: dict):
         """
         Send variables to the kernel namespace using pickle.
         """
@@ -182,17 +179,22 @@ import pickle, base64
 vars_dict = pickle.loads(base64.b64decode('{pickled_vars}'))
 globals().update(vars_dict)
 """
-        self.run_code(code)
+        self.run_code_raise_errors(code)
+    
+    def send_tools(self, tools: Dict[str, Tool]):
+        tool_definition_code = get_tools_definition_code(tools)
+        execution = self.run_code_raise_errors(tool_definition_code)
+        self.logger.log(execution.logs)
 
-    def get_variable_from_kernel(self, var_name: str) -> Any:
+    def download_variable(self, var_name: str) -> Any:
         """
-        Retrieve a variable from the kernel namespace.
+        Download a variable from the kernel namespace.
         """
         code = f"""
 import pickle, base64
 print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
 """
-        result, _, _ = self.run_code(code, return_final_answer=True)
+        result, _, _ = self.run_code_raise_errors(code, return_final_answer=True)
         return result
 
     def _send_execute_request(self, code: str) -> str:
@@ -228,15 +230,15 @@ print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
     def cleanup(self):
         """Clean up resources."""
         try:
-            if hasattr(self, "kernel_id"):
-                self.session.delete(f"{self.base_url}/api/kernels/{self.kernel_id}")
+            # if hasattr(self, "kernel_id"):
+            #     self.session.delete(f"{self.base_url}/api/kernels/{self.kernel_id}")
             if hasattr(self, "container"):
-                self.logger.info(f"Stopping and removing container {self.container.short_id}...")
+                self.logger.log(f"Stopping and removing container {self.container.short_id}...", level=1)
                 self.container.stop()
                 self.container.remove()
-                self.logger.info("Container cleanup completed")
+                self.logger.log("Container cleanup completed", level=1)
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            self.logger.log_error(f"Error during cleanup: {e}")
 
     def __del__(self):
         """Ensure cleanup on deletion."""

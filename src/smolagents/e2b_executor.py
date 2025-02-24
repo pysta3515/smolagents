@@ -23,8 +23,7 @@ from typing import Any, Dict, List, Tuple
 
 from PIL import Image
 
-from .tool_validation import validate_tool_attributes
-from .tools import Tool
+from .tools import Tool, get_tools_definition_code
 from .utils import BASE_BUILTIN_MODULES, instance_to_source
 
 
@@ -83,59 +82,20 @@ class E2BExecutor:
             raise ValueError(logs)
         return execution
 
-    def update_tools(self, tools: Dict[str, Tool]):
-        tool_codes = []
-        for tool in tools.values():
-            validate_tool_attributes(tool.__class__, check_imports=False)
-            tool_code = instance_to_source(tool, base_cls=Tool)
-            tool_code = tool_code.replace("from smolagents.tools import Tool", "")
-            tool_code += f"\n{tool.name} = {tool.__class__.__name__}()\n"
-            tool_codes.append(tool_code)
-
-        tool_definition_code = "\n".join([f"import {module}" for module in BASE_BUILTIN_MODULES])
-        tool_definition_code += textwrap.dedent(
-            """
-        class Tool:
-            def __call__(self, *args, **kwargs):
-                return self.forward(*args, **kwargs)
-
-            def forward(self, *args, **kwargs):
-                pass # to be implemented in child class
-        """
-        )
-        tool_definition_code += "\n\n".join(tool_codes)
-
+    def send_tools(self, tools: Dict[str, Tool]):
+        tool_definition_code = get_tools_definition_code(tools)
         execution = self.run_code_raise_errors(tool_definition_code)
         self.logger.log(execution.logs)
 
-        self.send_variables_to_server(initial_state)
-
-    def run_code_raise_errors(self, code: str):
-        if self.final_answer_pattern.search(code) is not None:
-            self.final_answer = True
-        execution = self.sbx.run_code(
-            code,
-        )
-        if execution.error:
-            execution_logs = "\n".join([str(log) for log in execution.logs.stdout])
-            logs = execution_logs
-            logs += "Executing code yielded an error:"
-            logs += execution.error.name
-            logs += execution.error.value
-            logs += execution.error.traceback
-            raise ValueError(logs)
-        return execution
-
-    def send_variables_to_server(self, additional_args):
+    def send_variables(self, variables: dict):
         """Pickle additional_args to server"""
         import tempfile
-    def __call__(self, code_action: str, additional_args: Dict[str, Any]) -> Tuple[Any, Any]:
-        if len(additional_args) > 0:
+        if len(variables) > 0:
             # Pickle additional_args to server
             import tempfile
 
         with tempfile.NamedTemporaryFile() as f:
-            pickle.dump(additional_args, f)
+            pickle.dump(variables, f)
             f.flush()
             with open(f.name, "rb") as file:
                 self.sbx.files.write("/home/state.pkl", file)

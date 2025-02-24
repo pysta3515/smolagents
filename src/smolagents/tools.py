@@ -45,7 +45,7 @@ from ._function_type_hints_utils import (
 )
 from .agent_types import handle_agent_input_types, handle_agent_output_types
 from .tool_validation import MethodChecker, validate_tool_attributes
-from .utils import _is_package_available, _is_pillow_available, get_source, instance_to_source
+from .utils import _is_package_available, _is_pillow_available, get_source, instance_to_source, BASE_BUILTIN_MODULES
 
 
 logger = logging.getLogger(__name__)
@@ -1030,6 +1030,29 @@ class PipelineTool(Tool):
 
         return handle_agent_output_types(decoded_outputs, self.output_type)
 
+
+def get_tools_definition_code(tools: Dict[str, Tool]) -> str:
+    tool_codes = []
+    for tool in tools.values():
+        validate_tool_attributes(tool.__class__, check_imports=False)
+        tool_code = instance_to_source(tool, base_cls=Tool)
+        tool_code = tool_code.replace("from smolagents.tools import Tool", "")
+        tool_code += f"\n\n{tool.name} = {tool.__class__.__name__}()\n"
+        tool_codes.append(tool_code)
+
+    tool_definition_code = "\n".join([f"import {module}" for module in BASE_BUILTIN_MODULES])
+    tool_definition_code += textwrap.dedent(
+        """
+    class Tool:
+        def __call__(self, *args, **kwargs):
+            return self.forward(*args, **kwargs)
+
+        def forward(self, *args, **kwargs):
+            pass # to be implemented in child class
+    """
+    )
+    tool_definition_code += "\n\n".join(tool_codes)
+    return tool_definition_code
 
 __all__ = [
     "AUTHORIZED_TYPES",
