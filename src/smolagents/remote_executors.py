@@ -40,6 +40,7 @@ except ModuleNotFoundError:
 
 class RemotePythonExecutor(PythonExecutor):
     def __init__(self, additional_imports: List[str], logger):
+        self.additional_imports = additional_imports
         self.logger = logger
         self.logger.log("Initializing executor, hold on...")
         self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$")
