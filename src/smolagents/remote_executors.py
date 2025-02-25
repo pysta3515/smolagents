@@ -95,7 +95,7 @@ class E2BExecutor(RemotePythonExecutor):
             raise ModuleNotFoundError(
                 """Please install 'e2b' extra to use E2BExecutor: `pip install "smolagents[e2b]"`"""
             )
-        self.sbx = Sandbox()  # "qywp2ctmu2q7jzprcf4j")
+        self.sbx = Sandbox()
         self.installed_packages = self.install_packages(additional_imports)
         self.logger.log("E2B is running", level=1)
 
