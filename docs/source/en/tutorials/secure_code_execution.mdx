@@ -48,7 +48,7 @@ One could argue that on the [spectrum of agency](../conceptual_guides/intro_agen
 So you need to be mindful of security.
 
 To add a first layer of security, code execution in `smolagents` is not performed by the vanilla Python interpreter.
-We have re-built a more secure `LocalPythonInterpreter` from the ground up.
+We have re-built a more secure `LocalPythonExecutor` from the ground up.
 
 To be precise, this interpreter works by loading the Abstract Syntax Tree (AST) from your Code and executes it operation by operation, making sure to always follow certain rules:
 - By default, imports are disallowed unless they have been explicitly added to an authorization list by the user.

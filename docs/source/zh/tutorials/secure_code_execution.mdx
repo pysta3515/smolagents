@@ -41,7 +41,7 @@ rendered properly in your Markdown viewer.
 ### 本地 Python 解释器
 
 默认情况下，`CodeAgent` 会在你的环境中运行 LLM 生成的代码。
-这个执行不是由普通的 Python 解释器完成的：我们从零开始重新构建了一个更安全的 `LocalPythonInterpreter`。
+这个执行不是由普通的 Python 解释器完成的：我们从零开始重新构建了一个更安全的 `LocalPythonExecutor`。
 这个解释器通过以下方式设计以确保安全：
   - 将导入限制为用户显式传递的列表
   - 限制操作次数以防止无限循环和资源膨胀

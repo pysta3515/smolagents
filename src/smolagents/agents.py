@@ -40,7 +40,7 @@ from .agent_types import AgentAudio, AgentImage, AgentType, handle_agent_output_
 from .default_tools import TOOL_MAPPING, FinalAnswerTool
 from .local_python_executor import (
     BASE_BUILTIN_MODULES,
-    LocalPythonInterpreter,
+    LocalPythonExecutor,
     fix_final_answer_code,
 )
 from .memory import ActionStep, AgentMemory, PlanningStep, SystemPromptStep, TaskStep, ToolCall
@@ -1133,7 +1133,7 @@ class CodeAgent(MultiStepAgent):
         grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
-        use_e2b_executor (`bool`, default `False`): Whether to use the E2B executor for remote code execution.
+        executor (`str`, default `"local"`): Which executor to use between `"local"`, `"e2b"`, or `"docker"`.
         use_docker_executor (`bool`, default `False`): Whether to use the Docker executor for remote code execution.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
         **kwargs: Additional keyword arguments.
@@ -1148,14 +1148,13 @@ class CodeAgent(MultiStepAgent):
         grammar: Optional[Dict[str, str]] = None,
         additional_authorized_imports: Optional[List[str]] = None,
         planning_interval: Optional[int] = None,
-        use_e2b_executor: bool = False,
+        executor: str = "local",
         use_docker_executor: bool = False,
         max_print_outputs_length: Optional[int] = None,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = list(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
-        self.use_e2b_executor = use_e2b_executor
         self.max_print_outputs_length = max_print_outputs_length
         prompt_templates = prompt_templates or yaml.safe_load(
             importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
@@ -1174,22 +1173,24 @@ class CodeAgent(MultiStepAgent):
                 0,
             )
 
-        # Validate executor options
-        if use_e2b_executor and use_docker_executor:
-            raise ValueError("Cannot use both E2B executor and Docker executor at the same time.")
-        if (use_e2b_executor or use_docker_executor) and len(self.managed_agents) > 0:
-            raise Exception("Managed agents are not yet supported with remote code execution.")
+        self.python_executor = self.create_executor(executor)
 
-        # Initialize the appropriate executor
-        if use_e2b_executor:
-            self.python_executor = E2BExecutor(self.additional_authorized_imports, self.logger)
-        elif use_docker_executor:
-            self.python_executor = DockerExecutor(self.additional_authorized_imports, self.logger)
-        else:
-            self.python_executor = LocalPythonInterpreter(
-                self.additional_authorized_imports,
-                max_print_outputs_length=max_print_outputs_length,
-            )
+    def create_executor(self, executor_type: str, kwargs: Dict[str, Any]):
+        match executor_type:
+            case "e2b" | "docker":
+                if self.managed_agents:
+                    raise Exception("Managed agents are not yet supported with remote code execution.")
+                if executor_type == "e2b":
+                    return E2BExecutor(self.additional_authorized_imports, self.logger, **kwargs)
+                else:
+                    return DockerExecutor(self.additional_authorized_imports, self.logger, **kwargs)
+            case "local":
+                return LocalPythonExecutor(
+                    self.additional_authorized_imports,
+                    max_print_outputs_length=self.max_print_outputs_length,
+                )
+            case _:  # if applicable
+                raise ValueError(f"Unsupported executor: {executor_type}")
 
     def initialize_system_prompt(self) -> str:
         system_prompt = populate_template(

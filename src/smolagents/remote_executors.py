@@ -37,7 +37,7 @@ except ModuleNotFoundError:
     pass
 
 
-class Executor:
+class RemotePythonExecutor:
     def __init__(self, additional_imports: List[str], logger):
         self.logger = logger
         self.logger.log("Initializing executor, hold on...")
@@ -85,7 +85,7 @@ locals().update(vars_dict)
         return additional_imports
 
 
-class E2BExecutor(Executor):
+class E2BExecutor(RemotePythonExecutor):
     def __init__(self, additional_imports: List[str], logger):
         super().__init__(additional_imports, logger)
         try:
@@ -141,7 +141,7 @@ class E2BExecutor(Executor):
             return None, execution_logs
 
 
-class DockerExecutor(Executor):
+class DockerExecutor(RemotePythonExecutor):
     """
     Executes Python code using Jupyter Kernel Gateway in a Docker container.
     """

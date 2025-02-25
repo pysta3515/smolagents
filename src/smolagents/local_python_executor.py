@@ -1416,7 +1416,7 @@ def evaluate_python_code(
         )
 
 
-class LocalPythonInterpreter:
+class LocalPythonExecutor:
     def __init__(
         self,
         additional_authorized_imports: List[str],
@@ -1451,4 +1451,4 @@ class LocalPythonInterpreter:
         self.static_tools = {**tools, **BASE_PYTHON_TOOLS.copy()}
 
 
-__all__ = ["evaluate_python_code", "LocalPythonInterpreter"]
+__all__ = ["evaluate_python_code", "LocalPythonExecutor"]
