@@ -198,8 +198,8 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             self.container = self.client.containers.run(
                 "jupyter-kernel", ports={"8888/tcp": (host, port)}, detach=True
             )
-            # Wait for kernel gateway to start
 
+            # Wait for kernel gateway to start
             self.logger.log("Waiting for kernel gateway to start...", level=1)
             time.sleep(2)
             # Initialize kernel session
