@@ -1416,7 +1416,11 @@ def evaluate_python_code(
         )
 
 
-class LocalPythonExecutor:
+class PythonExecutor:
+    pass
+
+
+class LocalPythonExecutor(PythonExecutor):
     def __init__(
         self,
         additional_authorized_imports: List[str],

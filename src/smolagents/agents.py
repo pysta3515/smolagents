@@ -38,11 +38,7 @@ from rich.text import Text
 
 from .agent_types import AgentAudio, AgentImage, AgentType, handle_agent_output_types
 from .default_tools import TOOL_MAPPING, FinalAnswerTool
-from .local_python_executor import (
-    BASE_BUILTIN_MODULES,
-    LocalPythonExecutor,
-    fix_final_answer_code,
-)
+from .local_python_executor import BASE_BUILTIN_MODULES, LocalPythonExecutor, PythonExecutor, fix_final_answer_code
 from .memory import ActionStep, AgentMemory, PlanningStep, SystemPromptStep, TaskStep, ToolCall
 from .models import (
     ChatMessage,
@@ -842,8 +838,8 @@ You have been provided with these additional arguments, that you can access usin
         }
         if hasattr(self, "authorized_imports"):
             agent_dict["authorized_imports"] = self.authorized_imports
-        if hasattr(self, "use_e2b_executor"):
-            agent_dict["use_e2b_executor"] = self.use_e2b_executor
+        if hasattr(self, "executor"):
+            agent_dict["executor"] = self.executor
         if hasattr(self, "max_print_outputs_length"):
             agent_dict["max_print_outputs_length"] = self.max_print_outputs_length
         return agent_dict
@@ -940,7 +936,7 @@ You have been provided with these additional arguments, that you can access usin
         )
         if cls.__name__ == "CodeAgent":
             args["additional_authorized_imports"] = agent_dict["authorized_imports"]
-            args["use_e2b_executor"] = agent_dict["use_e2b_executor"]
+            args["executor"] = agent_dict["executor"]
             args["max_print_outputs_length"] = agent_dict["max_print_outputs_length"]
         args.update(kwargs)
         return cls(**args)
@@ -1134,7 +1130,7 @@ class CodeAgent(MultiStepAgent):
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor (`str`, default `"local"`): Which executor to use between `"local"`, `"e2b"`, or `"docker"`.
-        use_docker_executor (`bool`, default `False`): Whether to use the Docker executor for remote code execution.
+        executor_kwargs (`dict`, *optional*): Additional arguments to pass to the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
         **kwargs: Additional keyword arguments.
 
@@ -1173,17 +1169,17 @@ class CodeAgent(MultiStepAgent):
                 0,
             )
 
-        self.python_executor = self.create_executor(executor, executor_kwargs)
+        self.python_executor = self.create_python_executor(executor, executor_kwargs)
 
-    def create_executor(self, executor_type: str):
+    def create_python_executor(self, executor_type: str, kwargs: Optional[Dict[str, Any]] = None) -> PythonExecutor:
         match executor_type:
             case "e2b" | "docker":
                 if self.managed_agents:
                     raise Exception("Managed agents are not yet supported with remote code execution.")
                 if executor_type == "e2b":
-                    return E2BExecutor(self.additional_authorized_imports, self.logger)
+                    return E2BExecutor(self.additional_authorized_imports, self.logger, **kwargs)
                 else:
-                    return DockerExecutor(self.additional_authorized_imports, self.logger)
+                    return DockerExecutor(self.additional_authorized_imports, self.logger, **kwargs)
             case "local":
                 return LocalPythonExecutor(
                     self.additional_authorized_imports,

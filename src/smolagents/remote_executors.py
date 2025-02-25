@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Tuple
 import requests
 from PIL import Image
 
+from .local_python_executor import PythonExecutor
 from .tools import Tool, get_tools_definition_code
 
 
@@ -37,7 +38,7 @@ except ModuleNotFoundError:
     pass
 
 
-class RemotePythonExecutor:
+class RemotePythonExecutor(PythonExecutor):
     def __init__(self, additional_imports: List[str], logger):
         self.logger = logger
         self.logger.log("Initializing executor, hold on...")
