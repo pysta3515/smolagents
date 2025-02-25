@@ -840,6 +840,7 @@ You have been provided with these additional arguments, that you can access usin
             agent_dict["authorized_imports"] = self.authorized_imports
         if hasattr(self, "executor_type"):
             agent_dict["executor_type"] = self.executor_type
+            agent_dict["executor_kwargs"] = self.executor_kwargs
         if hasattr(self, "max_print_outputs_length"):
             agent_dict["max_print_outputs_length"] = self.max_print_outputs_length
         return agent_dict
@@ -937,6 +938,7 @@ You have been provided with these additional arguments, that you can access usin
         if cls.__name__ == "CodeAgent":
             args["additional_authorized_imports"] = agent_dict["authorized_imports"]
             args["executor_type"] = agent_dict["executor_type"]
+            args["executor_kwargs"] = agent_dict["executor_kwargs"]
             args["max_print_outputs_length"] = agent_dict["max_print_outputs_length"]
         args.update(kwargs)
         return cls(**args)

@@ -45,6 +45,7 @@ class RemotePythonExecutor(PythonExecutor):
         self.logger = logger
         self.logger.log("Initializing executor, hold on...")
         self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$")
+        self.installed_packages = []
 
     def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str]:
         raise NotImplementedError

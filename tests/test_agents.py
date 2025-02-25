@@ -854,6 +854,8 @@ class MultiAgentsTests(unittest.TestCase):
             additional_authorized_imports=["pandas", "datetime"],
             managed_agents=[web_agent, code_agent],
             max_print_outputs_length=1000,
+            executor_type="local",
+            executor_kwargs={"max_workers": 2},
         )
         agent.save("agent_export")
 
@@ -892,6 +894,7 @@ class MultiAgentsTests(unittest.TestCase):
         assert set(agent2.authorized_imports) == set(["pandas", "datetime"] + BASE_BUILTIN_MODULES)
         assert agent2.max_print_outputs_length == 1000
         assert agent2.executor_type == "local"
+        assert agent2.executor_kwargs == {"max_workers": 2}
         assert (
             agent2.managed_agents["web_agent"].tools["web_search"].max_results == 10
         )  # For now tool init parameters are forgotten
