@@ -1173,7 +1173,7 @@ class CodeAgent(MultiStepAgent):
                 0,
             )
 
-        self.python_executor = self.create_executor(executor)
+        self.python_executor = self.create_executor(executor, executor_kwargs)
 
     def create_executor(self, executor_type: str):
         match executor_type:
