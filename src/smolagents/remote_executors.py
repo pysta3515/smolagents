@@ -205,8 +205,8 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
 
             # Initialize kernel session
             self.base_url = f"http://{host}:{port}"
-            # Create new kernel via HTTP
 
+            # Create new kernel via HTTP
             r = requests.post(f"{self.base_url}/api/kernels")
             if r.status_code != 201:
                 error_details = {
