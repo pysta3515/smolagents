@@ -27,6 +27,7 @@ import requests
 from PIL import Image
 
 from .local_python_executor import PythonExecutor
+from .monitoring import LogLevel
 from .tools import Tool, get_tools_definition_code
 
 
@@ -45,7 +46,7 @@ class RemotePythonExecutor(PythonExecutor):
         self.logger.log("Initializing executor, hold on...")
         self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$")
 
-    def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
+    def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str]:
         raise NotImplementedError
 
     def send_tools(self, tools: Dict[str, Tool]):
@@ -96,12 +97,12 @@ class E2BExecutor(RemotePythonExecutor):
             raise ModuleNotFoundError(
                 """Please install 'e2b' extra to use E2BExecutor: `pip install "smolagents[e2b]"`"""
             )
-        self.sbx = Sandbox()
+        self.sandbox = Sandbox()
         self.installed_packages = self.install_packages(additional_imports)
-        self.logger.log("E2B is running", level=1)
+        self.logger.log("E2B is running", level=LogLevel.INFO)
 
     def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> Tuple[Any, str]:
-        execution = self.sbx.run_code(
+        execution = self.sandbox.run_code(
             code,
         )
         if execution.error:
@@ -161,6 +162,7 @@ class DockerExecutor(RemotePythonExecutor):
         super().__init__(additional_imports, logger)
         try:
             import docker
+            from websocket import create_connection
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
                 "Please install 'docker' extra to use DockerExecutor: `pip install 'smolagents[docker]'`"
@@ -176,8 +178,7 @@ class DockerExecutor(RemotePythonExecutor):
 
         # Build and start container
         try:
-            # Build the Docker image
-            self.logger.log("Building Docker image...", level=1)
+            self.logger.log("Building Docker image...", level=LogLevel.INFO)
             dockerfile_path = Path(__file__).parent / "Dockerfile"
             if not dockerfile_path.exists():
                 with open(dockerfile_path, "w") as f:
@@ -189,23 +190,24 @@ RUN pip install jupyter_client notebook
 EXPOSE 8888
 CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGatewayApp.port=8888", "--KernelGatewayApp.allow_origin='*'"]
 """)
-            image, build_logs = self.client.images.build(
+            _, build_logs = self.client.images.build(
                 path=str(dockerfile_path.parent), dockerfile=str(dockerfile_path), tag="jupyter-kernel"
             )
+            self.logger.log(build_logs, level=LogLevel.DEBUG)
 
-            # Run the container
-            self.logger.log(f"Starting container on {host}:{port}...", level=1)
+            self.logger.log(f"Starting container on {host}:{port}...", level=LogLevel.INFO)
             self.container = self.client.containers.run(
                 "jupyter-kernel", ports={"8888/tcp": (host, port)}, detach=True
             )
-            # Wait for kernel gateway to start
 
-            self.logger.log("Waiting for kernel gateway to start...", level=1)
-            time.sleep(2)
-            # Initialize kernel session
+            retries = 0
+            while self.container.status != "running" and retries < 5:
+                self.logger.log(f"Container status: {self.container.status}, waiting...", level=LogLevel.INFO)
+                time.sleep(1)
+                self.container.reload()
+                retries += 1
 
             self.base_url = f"http://{host}:{port}"
-            # Create new kernel via HTTP
 
             r = requests.post(f"{self.base_url}/api/kernels")
             if r.status_code != 201:
@@ -223,22 +225,19 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
 
             self.kernel_id = r.json()["id"]
 
-            # Initialize WebSocket connection
-            from websocket import create_connection
-
             ws_url = f"ws://{host}:{port}/api/kernels/{self.kernel_id}/channels"
             self.ws = create_connection(ws_url)
 
-            # Install additional packages
             self.installed_packages = self.install_packages(additional_imports)
-            self.logger.log(f"Container {self.container.short_id} is running with kernel {self.kernel_id}", level=1)
+            self.logger.log(
+                f"Container {self.container.short_id} is running with kernel {self.kernel_id}", level=LogLevel.INFO
+            )
 
         except Exception as e:
             self.cleanup()
-            # Re-raise with the original traceback preserved
             raise RuntimeError(f"Failed to initialize Jupyter kernel: {e}") from e
 
-    def run_code_raise_errors(self, code_action: str, return_final_answer: bool = False) -> Tuple[Any, str, bool]:
+    def run_code_raise_errors(self, code_action: str, return_final_answer: bool = False) -> Tuple[Any, str]:
         """
         Execute code and return result based on whether it's a final answer.
         """
@@ -293,17 +292,6 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             self.logger.log_error(f"Code execution failed: {e}")
             raise
 
-    def download_variable(self, var_name: str) -> Any:
-        """
-        Download a variable from the kernel namespace.
-        """
-        code = f"""
-import pickle, base64
-print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
-"""
-        result, _, _ = self.run_code_raise_errors(code, return_final_answer=True)
-        return result
-
     def _send_execute_request(self, code: str) -> str:
         """Send code execution request to kernel."""
         import uuid
@@ -338,10 +326,10 @@ print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
         """Clean up resources."""
         try:
             if hasattr(self, "container"):
-                self.logger.log(f"Stopping and removing container {self.container.short_id}...", level=1)
+                self.logger.log(f"Stopping and removing container {self.container.short_id}...", level=LogLevel.INFO)
                 self.container.stop()
                 self.container.remove()
-                self.logger.log("Container cleanup completed", level=1)
+                self.logger.log("Container cleanup completed", level=LogLevel.INFO)
         except Exception as e:
             self.logger.log_error(f"Error during cleanup: {e}")
 

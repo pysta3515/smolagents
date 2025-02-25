@@ -20,7 +20,7 @@ class TestE2BExecutor:
         assert isinstance(executor, E2BExecutor)
         assert executor.logger == logger
         assert executor.final_answer_pattern.pattern == r"^final_answer\((.*)\)$"
-        assert executor.sbx == mock_sandbox.return_value
+        assert executor.sandbox == mock_sandbox.return_value
 
 
 class TestDockerExecutor(TestCase):
