@@ -337,8 +337,6 @@ print("RESULT_PICKLE:" + base64.b64encode(pickle.dumps({var_name})).decode())
     def cleanup(self):
         """Clean up resources."""
         try:
-            # if hasattr(self, "kernel_id"):
-            #     self.session.delete(f"{self.base_url}/api/kernels/{self.kernel_id}")
             if hasattr(self, "container"):
                 self.logger.log(f"Stopping and removing container {self.container.short_id}...", level=1)
                 self.container.stop()
