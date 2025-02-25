@@ -162,7 +162,7 @@ class DockerExecutor(RemotePythonExecutor):
             import docker
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                """Please install 'docker' extra to use E2BExecutor: `pip install 'smolagents[docker]'`"""
+                "Please install 'docker' extra to use DockerExecutor: `pip install 'smolagents[docker]'`"
             )
         self.host = host
         self.port = port
