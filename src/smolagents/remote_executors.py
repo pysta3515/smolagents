@@ -23,7 +23,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-import docker
 import requests
 from PIL import Image
 
@@ -158,6 +157,12 @@ class DockerExecutor(Executor):
         Initialize the Docker-based Jupyter Kernel Gateway executor.
         """
         super().__init__(additional_imports, logger)
+        try:
+            import docker
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                """Please install 'docker' extra to use E2BExecutor: `pip install 'smolagents[docker]'`"""
+            )
         self.host = host
         self.port = port
 
