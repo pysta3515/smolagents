@@ -64,7 +64,7 @@ rendered properly in your Markdown viewer.
 
 现在你已经准备好了！
 
-要将代码执行器设置为 E2B，只需在初始化 `CodeAgent` 时传递标志 `executor="e2b"`。
+要将代码执行器设置为 E2B，只需在初始化 `CodeAgent` 时传递标志 `executor_type="e2b"`。
 请注意，你应该将所有工具的依赖项添加到 `additional_authorized_imports` 中，以便执行器安装它们。
 
 ```py
@@ -73,7 +73,7 @@ agent = CodeAgent(
     tools = [VisitWebpageTool()],
     model=HfApiModel(),
     additional_authorized_imports=["requests", "markdownify"],
-    executor="e2b"
+    executor_type="e2b"
 )
 
 agent.run("What was Abraham Lincoln's preferred pet?")

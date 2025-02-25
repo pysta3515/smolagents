@@ -90,11 +90,11 @@ pip install 'smolagents[e2b]'
 
 #### Running your agent in E2B: mono agents
 
-We provide a simple way to use an E2B Sandbox: simply add `executor="e2b"` to the agent initialization, like:
+We provide a simple way to use an E2B Sandbox: simply add `executor_type="e2b"` to the agent initialization, like:
 ```py
 from smolagents import HfApiModel, CodeAgent
 
-agent = CodeAgent(model=HfApiModel(), tools=[], executor="e2b")
+agent = CodeAgent(model=HfApiModel(), tools=[], executor_type="e2b")
 
 agent.run("Can you give me the 100th Fibonacci number?")
 ```

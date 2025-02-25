@@ -7,10 +7,10 @@ agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model)
 output = agent.run("How many seconds would it take for a leopard at full speed to run through Pont des Arts?")
 print("Local executor result:", output)
 
-agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model, executor="docker")
+agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model, executor_type="docker")
 output = agent.run("How many seconds would it take for a leopard at full speed to run through Pont des Arts?")
 print("Docker executor result:", output)
 
-agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model, executor="e2b")
+agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model, executor_type="e2b")
 output = agent.run("How many seconds would it take for a leopard at full speed to run through Pont des Arts?")
 print("E2B executor result:", output)
