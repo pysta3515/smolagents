@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 import docker
 from PIL import Image
 
-from smolagents.docker_executor import DockerExecutor
-from smolagents.e2b_executor import E2BExecutor
+from smolagents.remote_executors import DockerExecutor, E2BExecutor
 
 from .utils.markers import require_run_all
 
