@@ -1149,7 +1149,7 @@ class CodeAgent(MultiStepAgent):
         additional_authorized_imports: Optional[List[str]] = None,
         planning_interval: Optional[int] = None,
         executor: str = "local",
-        use_docker_executor: bool = False,
+        executor_kwargs: Optional[Dict[str, Any]] = None,
         max_print_outputs_length: Optional[int] = None,
         **kwargs,
     ):
