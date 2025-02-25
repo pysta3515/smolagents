@@ -1175,15 +1175,15 @@ class CodeAgent(MultiStepAgent):
 
         self.python_executor = self.create_executor(executor)
 
-    def create_executor(self, executor_type: str, kwargs: Dict[str, Any]):
+    def create_executor(self, executor_type: str):
         match executor_type:
             case "e2b" | "docker":
                 if self.managed_agents:
                     raise Exception("Managed agents are not yet supported with remote code execution.")
                 if executor_type == "e2b":
-                    return E2BExecutor(self.additional_authorized_imports, self.logger, **kwargs)
+                    return E2BExecutor(self.additional_authorized_imports, self.logger)
                 else:
-                    return DockerExecutor(self.additional_authorized_imports, self.logger, **kwargs)
+                    return DockerExecutor(self.additional_authorized_imports, self.logger)
             case "local":
                 return LocalPythonExecutor(
                     self.additional_authorized_imports,
