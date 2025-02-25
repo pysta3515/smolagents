@@ -19,9 +19,7 @@ class TestE2BExecutor:
             executor = E2BExecutor(additional_imports=[], logger=logger)
         assert isinstance(executor, E2BExecutor)
         assert executor.logger == logger
-        assert executor.final_answer is False
-        assert executor.custom_tools == {}
-        assert executor.final_answer_pattern.pattern == r"final_answer\((.*?)\)"
+        assert executor.final_answer_pattern.pattern == r"^final_answer\((.*)\)$"
         assert executor.sbx == mock_sandbox.return_value
 
 
