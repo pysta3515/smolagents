@@ -202,8 +202,8 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             # Wait for kernel gateway to start
             self.logger.log("Waiting for kernel gateway to start...", level=1)
             time.sleep(2)
-            # Initialize kernel session
 
+            # Initialize kernel session
             self.base_url = f"http://{host}:{port}"
             # Create new kernel via HTTP
 
