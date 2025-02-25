@@ -192,8 +192,8 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
             image, build_logs = self.client.images.build(
                 path=str(dockerfile_path.parent), dockerfile=str(dockerfile_path), tag="jupyter-kernel"
             )
-            # Run the container
 
+            # Run the container
             self.logger.log(f"Starting container on {host}:{port}...", level=1)
             self.container = self.client.containers.run(
                 "jupyter-kernel", ports={"8888/tcp": (host, port)}, detach=True
