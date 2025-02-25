@@ -221,8 +221,8 @@ CMD ["jupyter", "kernelgateway", "--KernelGatewayApp.ip='0.0.0.0'", "--KernelGat
                 raise RuntimeError(f"Failed to create kernel: Status {r.status_code}\nResponse: {r.text}") from None
 
             self.kernel_id = r.json()["id"]
-            # Initialize WebSocket connection
 
+            # Initialize WebSocket connection
             from websocket import create_connection
 
             ws_url = f"ws://{host}:{port}/api/kernels/{self.kernel_id}/channels"
