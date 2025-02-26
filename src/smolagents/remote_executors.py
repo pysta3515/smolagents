@@ -96,7 +96,7 @@ class E2BExecutor(RemotePythonExecutor):
             from e2b_code_interpreter import Sandbox
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                """Please install 'e2b' extra to use E2BExecutor: `pip install "smolagents[e2b]"`"""
+                """Please install 'e2b' extra to use E2BExecutor: `pip install 'smolagents[e2b]'`"""
             )
         self.sandbox = Sandbox()
         self.installed_packages = self.install_packages(additional_imports)
@@ -175,7 +175,7 @@ class DockerExecutor(RemotePythonExecutor):
         try:
             self.client = docker.from_env()
         except docker.errors.DockerException as e:
-            raise RuntimeError("Could not connect to Docker daemon") from e
+            raise RuntimeError("Could not connect to Docker daemon: make sure Docker is running.") from e
 
         # Build and start container
         try:
