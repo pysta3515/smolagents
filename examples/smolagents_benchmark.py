@@ -75,6 +75,12 @@ def parse_arguments():
         default="code",
         help="The agent action type: 'code', 'tool-calling', or 'vanilla' to use the vanilla llm",
     )
+    parser.add_argument(
+        "--parallel-workers",
+        type=int,
+        default=32,
+        help="The number of processes to run in parallel",
+    )
     return parser.parse_args()
 
 
@@ -106,7 +112,7 @@ def append_answer(entry: dict, jsonl_file: str) -> None:
     print("Answer exported to file:", jsonl_file.resolve())
 
 
-def answer_single_question(example, model, answers_file, action_type="code"):
+def answer_single_question(example, model, answers_file, action_type):
     if action_type == "vanilla":
         agent = model
     elif action_type == "code":
@@ -134,7 +140,7 @@ def answer_single_question(example, model, answers_file, action_type="code"):
 
     try:
         if action_type=="vanilla":
-            answer= agent([{"role": "user", "text": augmented_question}]).content
+            answer= agent([{"role": "user", "content": augmented_question}]).content
             token_count = agent.last_output_token_count
             intermediate_steps = answer
         else:
@@ -175,6 +181,7 @@ def answer_questions(
     action_type="code",
     output_dir="output",
     push_to_hub_dataset=None,
+    parallel_workers=32,
 ):
     date = date or datetime.date.today().isoformat()
     model_id = model.model_id
@@ -188,8 +195,9 @@ def answer_questions(
                     answered_questions.append(json.loads(line)["original_question"])
 
         examples_todo = [example for example in eval_ds[task] if example["question"] not in answered_questions]
+        print(f"Launching {parallel_workers} parallel workers.")
 
-        with ThreadPoolExecutor(max_workers=32) as exe:
+        with ThreadPoolExecutor(max_workers=parallel_workers) as exe:
             futures = [exe.submit(answer_single_question, example, model, file_name, action_type) for example in examples_todo]
             for f in tqdm(as_completed(futures), total=len(examples_todo), desc="Processing tasks"):
                 f.result()
@@ -221,4 +229,11 @@ if __name__ == "__main__":
     elif args.model_type == "HfApiModel":
         model = HfApiModel(args.model_id, provider="together", max_tokens=8192)
 
-    answer_questions(eval_ds, model, action_type="code", date=args.date, push_to_hub_dataset=args.answers_dataset)
+    answer_questions(
+        eval_ds,
+        model,
+        action_type=args.agent_action_type,
+        date=args.date,
+        push_to_hub_dataset=args.answers_dataset,
+        parallel_workers=args.parallel_workers
+    )
