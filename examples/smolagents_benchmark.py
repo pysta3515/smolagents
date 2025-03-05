@@ -31,7 +31,6 @@ os.makedirs("output", exist_ok=True)
 APPEND_ANSWER_LOCK = threading.Lock()
 
 
-
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run a web browser automation script with a specified model.")
     parser.add_argument(
@@ -139,8 +138,8 @@ def answer_single_question(example, model, answers_file, action_type):
     start_time = time.time()
 
     try:
-        if action_type=="vanilla":
-            answer= agent([{"role": "user", "content": augmented_question}]).content
+        if action_type == "vanilla":
+            answer = agent([{"role": "user", "content": augmented_question}]).content
             token_count = agent.last_output_token_count
             intermediate_steps = answer
         else:
@@ -198,7 +197,9 @@ def answer_questions(
         print(f"Launching {parallel_workers} parallel workers.")
 
         with ThreadPoolExecutor(max_workers=parallel_workers) as exe:
-            futures = [exe.submit(answer_single_question, example, model, file_name, action_type) for example in examples_todo]
+            futures = [
+                exe.submit(answer_single_question, example, model, file_name, action_type) for example in examples_todo
+            ]
             for f in tqdm(as_completed(futures), total=len(examples_todo), desc="Processing tasks"):
                 f.result()
 
@@ -215,6 +216,7 @@ def answer_questions(
                 split="test",
                 commit_message=f"Upload {config}",
             )
+
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -235,5 +237,5 @@ if __name__ == "__main__":
         action_type=args.agent_action_type,
         date=args.date,
         push_to_hub_dataset=args.answers_dataset,
-        parallel_workers=args.parallel_workers
+        parallel_workers=args.parallel_workers,
     )
