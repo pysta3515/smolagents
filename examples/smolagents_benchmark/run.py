@@ -62,7 +62,7 @@ def parse_arguments():
         "--agent-action-type",
         type=str,
         default="code",
-        choices=['code', 'tool-calling', 'vanilla'],
+        choices=["code", "tool-calling", "vanilla"],
         help="The agent action type: 'code', 'tool-calling', or 'vanilla' to use the vanilla llm",
     )
     parser.add_argument(
@@ -73,7 +73,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--push-answers-to-hub",
-        action='store_true',
+        action="store_true",
         default=False,
         help="Push the answers to the hub",
     )
@@ -187,7 +187,6 @@ def answer_questions(
     date = date or datetime.date.today().isoformat()
     model_id = model.model_id
 
-
     for task in eval_ds:
         file_name = f"{output_dir}/{model_id.replace('/', '__')}__{action_type}__{task}__{date}.jsonl"
         print(f"Starting processing and writing output to '{file_name}'")
@@ -243,5 +242,5 @@ if __name__ == "__main__":
         action_type=args.agent_action_type,
         answers_dataset=args.answers_dataset,
         push_answers_to_hub=args.push_answers_to_hub,
-        parallel_workers=args.parallel_workers
+        parallel_workers=args.parallel_workers,
     )
