@@ -85,14 +85,14 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def load_eval_dataset(args):
+def load_eval_dataset(eval_dataset):
     # Choose the tasks to evaluate on:
     # tasks = ["gaia"]
     # or evaluate on all tasks: ["gaia", "math", "simpleqa"]
-    tasks = datasets.get_dataset_config_names(args.eval_dataset)
+    tasks = datasets.get_dataset_config_names(eval_dataset)
     print(tasks)
 
-    eval_ds = {task: datasets.load_dataset(args.eval_dataset, task, split="test") for task in tasks}
+    eval_ds = {task: datasets.load_dataset(eval_dataset, task, split="test") for task in tasks}
     print(pd.DataFrame(eval_ds["simpleqa"]).head())
     return eval_ds
 
@@ -226,7 +226,7 @@ def answer_questions(
 if __name__ == "__main__":
     args = parse_arguments()
 
-    eval_ds = load_eval_dataset(args)
+    eval_ds = load_eval_dataset(args.eval_dataset)
 
     if args.model_type == "LiteLLMModel":
         model = LiteLLMModel(
