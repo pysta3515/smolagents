@@ -1,10 +1,10 @@
 import argparse
+import datetime
 import json
 import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
 
 import datasets
@@ -33,53 +33,55 @@ APPEND_ANSWER_LOCK = threading.Lock()
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run a web browser automation script with a specified model.")
+    parser = argparse.ArgumentParser(description="Runs an agent powered by the given model on smolagent benchmark.")
     parser.add_argument(
         "--date",
         type=str,
-        default="2024-03-04",
-        help="The date",
+        default=None,
+        help="The date for the evaluation.",
     )
     parser.add_argument(
-        "--evals-dataset",
+        "--eval-dataset",
         type=str,
         default="smolagents/benchmark-v1",
     )
-    # The evals dataset is gated, so you must first visit its page to request access: https://huggingface.co/datasets/smolagents-benchmark/benchmark-v1
-    parser.add_argument(
-        "--answers-dataset",
-        type=str,
-        default="smolagents/answers",
-    )
-    parser.add_argument(
-        "--push-answers-dataset-to-hub",
-        type=bool,
-        default=True,
-    )
+    # The eval dataset is gated, so you must first visit its page to request access: https://huggingface.co/datasets/smolagents-benchmark/benchmark-v1
     parser.add_argument(
         "--model-type",
         type=str,
         default="HfApiModel",
         choices=["LiteLLMModel", "HfApiModel"],
-        help="The model type to use (e.g., OpenAIServerModel, LiteLLMModel, TransformersModel, HfApiModel)",
+        help="The model type to use (LiteLLMModel or HfApiModel)",
     )
     parser.add_argument(
         "--model-id",
         type=str,
-        default="Qwen/Qwen2.5-Coder-32B-Instruct",
+        required=True,
         help="The model ID to use for the specified model type",
     )
     parser.add_argument(
         "--agent-action-type",
         type=str,
         default="code",
+        choices=['code', 'tool-calling', 'vanilla'],
         help="The agent action type: 'code', 'tool-calling', or 'vanilla' to use the vanilla llm",
     )
     parser.add_argument(
         "--parallel-workers",
         type=int,
-        default=32,
+        default=8,
         help="The number of processes to run in parallel",
+    )
+    parser.add_argument(
+        "--push-answers-to-hub",
+        action='store_true',
+        default=False,
+        help="Push the answers to the hub",
+    )
+    parser.add_argument(
+        "--answers-dataset",
+        type=str,
+        default="smolagents/answers",
     )
     return parser.parse_args()
 
@@ -88,10 +90,10 @@ def load_eval_dataset(args):
     # Choose the tasks to evaluate on:
     # tasks = ["gaia"]
     # or evaluate on all tasks: ["gaia", "math", "simpleqa"]
-    tasks = datasets.get_dataset_config_names(args.evals_dataset)
+    tasks = datasets.get_dataset_config_names(args.eval_dataset)
     print(tasks)
 
-    eval_ds = {task: datasets.load_dataset(args.evals_dataset, task, split="test") for task in tasks}
+    eval_ds = {task: datasets.load_dataset(args.eval_dataset, task, split="test") for task in tasks}
     print(pd.DataFrame(eval_ds["simpleqa"]).head())
     return eval_ds
 
@@ -109,7 +111,6 @@ def append_answer(entry: dict, jsonl_file: str) -> None:
     with APPEND_ANSWER_LOCK, open(jsonl_file, "a", encoding="utf-8") as fp:
         fp.write(json.dumps(entry) + "\n")
     assert os.path.exists(jsonl_file), "File not found!"
-    print("Answer exported to file:", jsonl_file.resolve())
 
 
 def answer_single_question(example, model, answers_file, action_type):
@@ -157,7 +158,7 @@ def answer_single_question(example, model, answers_file, action_type):
     except Exception as e:
         print("Error on ", augmented_question, e)
         intermediate_steps = []
-    end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     annotated_example = {
         "model_id": model.model_id,
         "agent_action_type": action_type,
@@ -178,16 +179,19 @@ def answer_questions(
     eval_ds,
     model,
     date,
-    action_type="code",
-    output_dir="output",
-    push_to_hub_dataset=None,
-    parallel_workers=32,
+    action_type: str = "code",
+    output_dir: str = "output",
+    answers_dataset: str = None,
+    push_answers_to_hub: bool = False,
+    parallel_workers: int = 32,
 ):
     date = date or datetime.date.today().isoformat()
     model_id = model.model_id
 
+
     for task in eval_ds:
-        file_name = f"output/{model_id.replace('/', '__')}__{action_type}__{task}__{date}.jsonl"
+        file_name = f"{output_dir}/{model_id.replace('/', '__')}__{action_type}__{task}__{date}.jsonl"
+        print(f"Starting processing and writing output to '{file_name}'")
         answered_questions = []
         if os.path.exists(file_name):
             with open(file_name, "r") as f:
@@ -204,12 +208,13 @@ def answer_questions(
 
         print("All tasks processed.")
 
-        if push_to_hub_dataset:
+        if push_answers_to_hub and answers_dataset:
+            print("Pushing answers to hub...")
             ds = datasets.Dataset.from_pandas(pd.read_json(file_name, lines=True), split="test", preserve_index=False)
             config = f"{model_id.replace('/', '__')}__{action_type}__{task}"
             data_dir = f"{model_id}/{action_type}/{task}/{date}"
             ds.push_to_hub(
-                push_to_hub_dataset,
+                answers_dataset,
                 config_name=config,
                 data_dir=data_dir,
                 split="test",
@@ -226,14 +231,15 @@ if __name__ == "__main__":
             args.model_id,
             max_completion_tokens=8192,
         )
-    elif args.model_type == "HfApiModel":
+    else:
         model = HfApiModel(args.model_id, provider="together", max_tokens=8192)
 
     answer_questions(
         eval_ds,
         model,
+        args.date,
         action_type=args.agent_action_type,
-        date=args.date,
-        push_to_hub_dataset=args.answers_dataset,
+        answers_dataset=args.answers_dataset,
+        push_answers_to_hub=args.push_answers_to_hub,
         parallel_workers=args.parallel_workers
     )
