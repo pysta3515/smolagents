@@ -150,7 +150,7 @@ class TestHfApiModel:
 
         with pytest.raises(ValueError) as e:
             _ = HfApiModel(model_id="test-model", token="abc", api_key="def")
-        assert "Only one of 'token' or 'api_key' should be provided" in str(e)
+        assert "Received both `token` and `api_key` arguments." in str(e)
 
     @require_run_all
     def test_get_hfapi_message_no_tool(self):
