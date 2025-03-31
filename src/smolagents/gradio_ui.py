@@ -124,6 +124,16 @@ def pull_messages_from_step(
         elif hasattr(step_log, "error") and step_log.error is not None:
             yield gr.ChatMessage(role="assistant", content=str(step_log.error), metadata={"title": "💥 Error"})
 
+
+        if getattr(step_log, "observations_images", []):
+            for image in step_log.observations_images:
+                yield gr.ChatMessage(
+                    role="assistant",
+                    content={"path": AgentImage(image).to_string(), "mime_type": "image/png"},
+                    metadata={"title": "🖼️ Observed Image", "parent_id": parent_id, "status": "done"},
+                )
+            #TODO: check mime type
+
         yield gr.ChatMessage(role="assistant", content=get_step_footnote_content(step_log, step_number))
         yield gr.ChatMessage(role="assistant", content="-----", metadata={"status": "done"})
 
