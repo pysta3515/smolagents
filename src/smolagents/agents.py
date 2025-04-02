@@ -361,9 +361,7 @@ You have been provided with these additional arguments, that you can access usin
         if final_answer is None and self.step_number == max_steps + 1:
             final_answer = self._handle_max_steps_reached(task, images, step_start_time)
             yield action_step
-        final_step = FinalAnswerStep(handle_agent_output_types(final_answer))
-        self.memory.steps.append(final_step)
-        yield final_step
+        yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
     def _create_action_step(self, step_start_time: float, images: List["PIL.Image.Image"] | None) -> ActionStep:
         return ActionStep(step_number=self.step_number, start_time=step_start_time, observations_images=images)
