@@ -354,13 +354,16 @@ You have been provided with these additional arguments, that you can access usin
                 action_step.error = e
             finally:
                 self._finalize_step(action_step, step_start_time)
+                self.memory.steps.append(action_step)
                 yield action_step
                 self.step_number += 1
 
         if final_answer is None and self.step_number == max_steps + 1:
             final_answer = self._handle_max_steps_reached(task, images, step_start_time)
             yield action_step
-        yield FinalAnswerStep(handle_agent_output_types(final_answer))
+        final_step = FinalAnswerStep(handle_agent_output_types(final_answer))
+        self.memory.steps.append(final_step)
+        yield final_step
 
     def _create_action_step(self, step_start_time: float, images: List["PIL.Image.Image"] | None) -> ActionStep:
         return ActionStep(step_number=self.step_number, start_time=step_start_time, observations_images=images)
@@ -382,7 +385,6 @@ You have been provided with these additional arguments, that you can access usin
     def _finalize_step(self, memory_step: ActionStep, step_start_time: float):
         memory_step.end_time = time.time()
         memory_step.duration = memory_step.end_time - step_start_time
-        self.memory.steps.append(memory_step)
         for callback in self.step_callbacks:
             # For compatibility with old callbacks that don't take the agent as an argument
             callback(memory_step) if len(inspect.signature(callback).parameters) == 1 else callback(
