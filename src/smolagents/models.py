@@ -226,7 +226,7 @@ def get_clean_message_list(
             if flatten_messages_as_text:
                 output_message_list[-1]["content"] += "\n" + message["content"][0]["text"]
             else:
-                for el in message["content"]: # list
+                for el in message["content"]:  # list
                     if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
                         # This avoids duplicating text messages uselessly!
                         output_message_list[-1]["content"][-1]["text"] += "\n" + el["text"]
