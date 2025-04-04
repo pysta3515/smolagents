@@ -1,4 +1,4 @@
-# python examples/open_deep_research/run_gaia.py --concurrency 32 --run-name generate-traces-03-apr-noplanning --model-id gpt-4o
+# EXAMPLE COMMAND: python examples/open_deep_research/run_gaia.py --concurrency 32 --run-name generate-traces-03-apr-noplanning --model-id gpt-4o
 import argparse
 import json
 import os
@@ -199,8 +199,7 @@ def answer_single_question(example, model_id, answers_file, visual_inspection_to
     document_inspection_tool = TextInspectorTool(model, 100000)
 
     agent = create_agent_team(model)
-    print("SYSPROMPT:\n", agent.system_prompt)
-    quit()
+
 
     augmented_question = """You have one question to answer. It is paramount that you provide a correct answer.
 Give it all you can: I know for a fact that you have access to all the relevant tools to solve it and find the correct answer (the answer does exist). Failure or 'I cannot answer' or 'None found' will not be tolerated, success will be rewarded.
