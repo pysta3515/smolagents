@@ -79,7 +79,7 @@ def test_action_step_to_messages():
     assert "text" in text_content
 
     image_message = messages[2]
-    image_content = image_message["content"][1]
+    image_content = image_message["content"][0]
     assert isinstance(image_content, dict)
     assert "type" in image_content
     assert "image" in image_content
