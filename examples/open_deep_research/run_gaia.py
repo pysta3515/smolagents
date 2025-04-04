@@ -200,7 +200,6 @@ def answer_single_question(example, model_id, answers_file, visual_inspection_to
 
     agent = create_agent_team(model)
 
-
     augmented_question = """You have one question to answer. It is paramount that you provide a correct answer.
 Give it all you can: I know for a fact that you have access to all the relevant tools to solve it and find the correct answer (the answer does exist). Failure or 'I cannot answer' or 'None found' will not be tolerated, success will be rewarded.
 Run verification steps if that's needed, you must make sure you find the correct answer!
