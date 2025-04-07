@@ -248,8 +248,8 @@ def get_clean_message_list(
                     else:
                         output_message_list[-1]["content"].append(el)
         else:
-            if flatten_messages_as_text:
-                content = message["content"][0]["text"]
+            if flatten_messages_as_text and isinstance(message["content"], list):
+                content = "\n".join([message["text"] for message in message["content"]])
             else:
                 content = message["content"]
             output_message_list.append({"role": message["role"], "content": content})
