@@ -1278,8 +1278,8 @@ def prompt_templates():
     return {
         "system_prompt": "This is a test system prompt.",
         "managed_agent": {"task": "Task for {{name}}: {{task}}", "report": "Report for {{name}}: {{final_answer}}"},
-        "planning": {"initial_plan": "ok", "update_plan_pre_messages": "empty", "update_plan_post_messages": "empty"},
-        "final_answer": {"pre_messages": "ok", "post_messages": "ok"},
+        "planning": {"initial_plan": "The plan.", "update_plan_pre_messages": "custom", "update_plan_post_messages": "custom"},
+        "final_answer": {"pre_messages": "custom", "post_messages": "custom"},
     }
 
 
