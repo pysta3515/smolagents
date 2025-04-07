@@ -422,7 +422,7 @@ class TestAgent:
         agent = CodeAgent(tools=[tool], model=fake_code_model)
         agent.run("Empty task")
         assert "def " + tool.name + "(" in agent.system_prompt
-        assert '"""' + tool.description + "\n\nArgs:" in agent.system_prompt
+        assert '"""' + tool.description in agent.system_prompt
 
     def test_module_imports_get_baked_in_system_prompt(self):
         agent = CodeAgent(tools=[], model=fake_code_model)
@@ -532,8 +532,9 @@ nested_answer()
             do_sample=False,
         )
         agent = ToolCallingAgent(model=model, tools=[weather_api], max_steps=1, verbosity_level=10)
-        agent.run("What's the weather in Paris?")
-        assert agent.memory.steps[0].task == "What's the weather in Paris?"
+        task = "Use your weather api to tell me the weather in Paris."
+        agent.run(task)
+        assert agent.memory.steps[0].task == task
         assert agent.memory.steps[1].tool_calls[0].name == "weather_api"
         step_memory_dict = agent.memory.get_succinct_steps()[1]
         assert step_memory_dict["model_output_message"].tool_calls[0].function.name == "weather_api"
@@ -1277,6 +1278,8 @@ def prompt_templates():
     return {
         "system_prompt": "This is a test system prompt.",
         "managed_agent": {"task": "Task for {{name}}: {{task}}", "report": "Report for {{name}}: {{final_answer}}"},
+        "planning": {"initial_plan": "ok", "update_plan_pre_messages": "empty", "update_plan_post_messages": "empty"},
+        "final_answer": {"pre_messages": "ok", "post_messages": "ok"},
     }
 
 

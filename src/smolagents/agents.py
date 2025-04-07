@@ -201,15 +201,16 @@ class MultiStepAgent:
         self.agent_name = self.__class__.__name__
         self.model = model
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
-        missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-        assert not missing_keys, (
-            f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-        )
-        for key in EMPTY_PROMPT_TEMPLATES.keys():
-            for subkey in EMPTY_PROMPT_TEMPLATES[key]:
-                assert subkey in prompt_templates[key], (
-                    f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                )
+        if prompt_templates is not None:
+            missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
+            for key in EMPTY_PROMPT_TEMPLATES.keys():
+                for subkey in EMPTY_PROMPT_TEMPLATES[key]:
+                    assert subkey in prompt_templates[key], (
+                        f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                    )
         self.max_steps = max_steps
         self.step_number = 0
         self.grammar = grammar
