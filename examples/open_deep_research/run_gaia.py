@@ -33,7 +33,7 @@ from tqdm import tqdm
 from smolagents import (
     CodeAgent,
     GoogleSearchTool,
-    # HfApiModel,
+    HfApiModel,
     LiteLLMModel,
     Model,
     ToolCallingAgent,
@@ -164,7 +164,7 @@ def create_agent_team(model: Model):
         max_steps=12,
         verbosity_level=2,
         additional_authorized_imports=AUTHORIZED_IMPORTS,
-        planning_interval=4,
+        # planning_interval=4,
         managed_agents=[text_webbrowser_agent],
     )
     return manager_agent
@@ -190,12 +190,7 @@ def answer_single_question(example, model_id, answers_file, visual_inspection_to
     else:
         model_params["max_tokens"] = 4096
     model = LiteLLMModel(**model_params)
-    # model = HfApiModel(model_id="Qwen/Qwen2.5-72B-Instruct", provider="together")
-    #     "https://lnxyuvj02bpe6mam.us-east-1.aws.endpoints.huggingface.cloud",
-    #     custom_role_conversions=custom_role_conversions,
-    #     # provider="sambanova",
-    #     max_tokens=8096,
-    # )
+    # model = HfApiModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct", provider="together", max_tokens=4096)
     document_inspection_tool = TextInspectorTool(model, 100000)
 
     agent = create_agent_team(model)

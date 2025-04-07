@@ -113,7 +113,7 @@ system_prompt: |-
   If no tool call is needed, use final_answer tool to return your answer.
   4. Never re-do a tool call that you previously did with the exact same parameters.
 
-  Now Begin! If you solve the task correctly, you will receive a reward of $1,000,000.
+  Now Begin!
 planning:
   initial_plan : |-
     You are a world expert at analyzing a situation to derive facts, and plan accordingly towards solving a task.
@@ -148,8 +148,6 @@ planning:
     After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
 
     Here is your task:
-
-    Task:
     ```
     {{task}}
     ```
@@ -173,41 +171,23 @@ planning:
 
     Now begin! First in part 1, list the facts that you have at your disposal, then in part 2, make a plan to solve the task.
   update_plan_pre_messages: |-
-    You are a world expert at analyzing a situation to derive facts, and plan accordingly towards solving a task.
+    You are a world expert at analyzing a situation, and plan accordingly towards solving a task.
+
     You have been given a task:
     ```
     {{task}}
     ```
-    Below you will find a history of attempts made to solve the task. You will first have to produce a survey of known and unknown facts:
-
-    ## Facts survey
-    ### 1. Facts given in the task
-    ### 2. Facts that we have learned
-    ### 3. Facts still to look up
-    ### 4. Facts still to derive
-
-    Then you will have to propose an updated plan to solve the task.
-    If the previous tries so far have met some success, you can make an updated plan based on these actions.
+  
+    Below you will find a history of attempts made to solve this task. You will then have to propose a step-by-step high-level plan to solve the task.
+    If the previous tries so far have met some success, your updated plan can build on these results.
     If you are stalled, you can make a completely new plan starting from scratch.
 
     Find the task and history below:
   update_plan_post_messages: |-
-    Now write your updated facts below, taking into account the above history:
-
-    ## Updated facts survey
-    ### 1. Facts given in the task
-    ### 2. Facts that we have learned
-    ### 3. Facts still to look up
-    ### 4. Facts still to derive
-
-    Then write a step-by-step high-level plan to solve the task above.
-    ## Plan
-    ### 1. ...
-    Etc
-
-    This plan should involve individual tasks based on the available tools, that if executed correctly will yield the correct answer.
-    Beware that you have {remaining_steps} steps remaining.
+    Now write your step by step plan.
+    This plan should involve individual tasks and subtasks based on the available tools, that if executed correctly will yield the correct answer.
     Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
+    Beware that you have {remaining_steps} steps remaining.
     After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
 
     You can leverage these tools:

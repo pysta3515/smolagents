@@ -190,8 +190,6 @@ planning:
     After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
 
     Here is your task:
-
-    Task:
     ```
     {{task}}
     ```
