@@ -164,7 +164,7 @@ def create_agent_team(model: Model):
         max_steps=12,
         verbosity_level=2,
         additional_authorized_imports=AUTHORIZED_IMPORTS,
-        # planning_interval=4,
+        planning_interval=4,
         managed_agents=[text_webbrowser_agent],
     )
     return manager_agent
@@ -219,7 +219,7 @@ Here is the task:
         # Run agent 🚀
         final_result = agent.run(augmented_question)
 
-        agent_memory = agent.write_memory_to_messages(summary_mode=True)
+        agent_memory = agent.write_memory_to_messages()
 
         final_result = prepare_response(augmented_question, agent_memory, reformulation_model=model)
 
@@ -258,6 +258,7 @@ Here is the task:
         "task": example["task"],
         "task_id": example["task_id"],
         "true_answer": example["true_answer"],
+        "token_counts": agent.monitor.get_total_token_counts()
     }
     append_answer(annotated_example, answers_file)
 
