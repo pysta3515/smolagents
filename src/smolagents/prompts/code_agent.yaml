@@ -242,22 +242,32 @@ planning:
     First in part 1, write the facts survey, then in part 2, write your plan.
   update_plan_pre_messages: |-
     You are a world expert at analyzing a situation, and plan accordingly towards solving a task.
-
-    You have been given a task:
+    You have been given the following task:
     ```
     {{task}}
     ```
   
-    Below you will find a history of attempts made to solve this task. You will then have to propose a step-by-step high-level plan to solve the task.
+    Below you will find a history of attempts made to solve this task.
+    You will first have to produce a survey of known and unknown facts, then propose a step-by-step high-level plan to solve the task.
     If the previous tries so far have met some success, your updated plan can build on these results.
     If you are stalled, you can make a completely new plan starting from scratch.
 
     Find the task and history below:
   update_plan_post_messages: |-
-    Now write your step by step plan.
-    This plan should involve individual tasks and subtasks based on the available tools, that if executed correctly will yield the correct answer.
-    Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
+    Now write your updated facts below, taking into account the above history:
+    ## 1. Updated facts survey
+    ### 1.1. Facts given in the task
+    ### 1.2. Facts that we have learned
+    ### 1.3. Facts still to look up
+    ### 1.4. Facts still to derive
+  
+    Then write a step-by-step high-level plan to solve the task above.
+    ## 2. Plan
+    ### 2. 1. ...
+    Etc.
+    This plan should involve individual tasks based on the available tools, that if executed correctly will yield the correct answer.
     Beware that you have {remaining_steps} steps remaining.
+    Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
     After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
 
     You can leverage these tools, behaving like regular python functions:
@@ -286,7 +296,7 @@ planning:
     ```
     {%- endif %}
 
-    Now write your new plan below.
+    Now write your updated facts survey below, then your new plan.
 managed_agent:
   task: |-
       You're a helpful agent named '{{name}}'.

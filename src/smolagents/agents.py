@@ -1207,7 +1207,6 @@ class CodeAgent(MultiStepAgent):
                 ),
             },
         )
-        print("FINAL PROMPT:", system_prompt)
         return system_prompt
 
     def step(self, memory_step: ActionStep) -> Union[None, Any]:

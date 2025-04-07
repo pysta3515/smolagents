@@ -33,7 +33,6 @@ from tqdm import tqdm
 from smolagents import (
     CodeAgent,
     GoogleSearchTool,
-    HfApiModel,
     LiteLLMModel,
     Model,
     ToolCallingAgent,
@@ -244,6 +243,12 @@ Here is the task:
         exception = e
         raised_exception = True
     end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    token_counts_manager = agent.monitor.get_total_token_counts()
+    token_counts_web = list(agent.managed_agents.values())[0].monitor.get_total_token_counts()
+    total_token_counts = {
+        "input": token_counts_manager["input"] + token_counts_web["input"],
+        "output": token_counts_manager["output"] + token_counts_web["output"],
+    }
     annotated_example = {
         "agent_name": model.model_id,
         "question": example["question"],
@@ -253,12 +258,12 @@ Here is the task:
         "parsing_error": parsing_error,
         "iteration_limit_exceeded": iteration_limit_exceeded,
         "agent_error": str(exception) if raised_exception else None,
-        "start_time": start_time,
-        "end_time": end_time,
         "task": example["task"],
         "task_id": example["task_id"],
         "true_answer": example["true_answer"],
-        "token_counts": agent.monitor.get_total_token_counts()
+        "start_time": start_time,
+        "end_time": end_time,
+        "token_counts": total_token_counts,
     }
     append_answer(annotated_example, answers_file)
 
