@@ -228,7 +228,7 @@ def get_clean_message_list(
             else:
                 for el in message["content"]:  # list
                     if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
-                        # This avoids needlessly duplicating text messages
+                        # Merge consecutive text messages rather than creating new ones
                         output_message_list[-1]["content"][-1]["text"] += "\n" + el["text"]
                     else:
                         output_message_list[-1]["content"].append(el)
