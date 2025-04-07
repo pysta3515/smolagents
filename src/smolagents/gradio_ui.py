@@ -16,9 +16,7 @@
 import os
 import re
 import shutil
-from typing import List, Optional
-
-import PIL.Image
+from typing import Optional
 
 from smolagents.agent_types import AgentAudio, AgentImage, AgentText
 from smolagents.agents import MultiStepAgent, PlanningStep
@@ -169,7 +167,7 @@ def pull_messages_from_step(
 def stream_to_gradio(
     agent,
     task: str,
-    task_images: List[PIL.Image.Image] | None = None,
+    task_images: list | None = None,
     reset_agent_memory: bool = False,
     additional_args: Optional[dict] = None,
 ):
