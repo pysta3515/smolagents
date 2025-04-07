@@ -164,7 +164,7 @@ def create_agent_team(model: Model):
         max_steps=12,
         verbosity_level=2,
         additional_authorized_imports=AUTHORIZED_IMPORTS,
-        # planning_interval=4,
+        planning_interval=4,
         managed_agents=[text_webbrowser_agent],
     )
     return manager_agent
