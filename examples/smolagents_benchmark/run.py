@@ -141,12 +141,12 @@ def answer_single_question(example, model, answers_file, action_type):
     try:
         if action_type == "vanilla":
             answer = agent([{"role": "user", "content": augmented_question}]).content
-            token_count = agent.last_output_token_count
+            token_counts = agent.monitor.get_total_token_counts()
             intermediate_steps = answer
         else:
             # Run agent 🚀
             answer = str(agent.run(augmented_question))
-            token_count = agent.monitor.get_total_token_counts()
+            token_counts = agent.monitor.get_total_token_counts()
             # Remove memory from logs to make them more compact.
             for step in agent.memory.steps:
                 if isinstance(step, ActionStep):
@@ -157,6 +157,8 @@ def answer_single_question(example, model, answers_file, action_type):
     except Exception as e:
         print("Error on ", augmented_question, e)
         intermediate_steps = []
+        token_counts = {"input": 0, "output": 0}
+        answer = str(e)
     end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     annotated_example = {
         "model_id": model.model_id,
@@ -169,7 +171,7 @@ def answer_single_question(example, model, answers_file, action_type):
         "intermediate_steps": intermediate_steps,
         "start_time": start_time,
         "end_time": end_time,
-        "token_counts": token_count,
+        "token_counts": token_counts,
     }
     append_answer(annotated_example, answers_file)
 
@@ -233,7 +235,7 @@ if __name__ == "__main__":
             max_completion_tokens=8192,
         )
     else:
-        model = HfApiModel(model_id=args.model_id, provider="together", max_tokens=8192)
+        model = HfApiModel(model_id=args.model_id, max_tokens=8192)
 
     answer_questions(
         eval_ds,
