@@ -421,8 +421,9 @@ class TestAgent:
         tool.description = "fake_tool_description"
         agent = CodeAgent(tools=[tool], model=fake_code_model)
         agent.run("Empty task")
-        assert "def " + tool.name + "(" in agent.system_prompt
-        assert '"""' + tool.description in agent.system_prompt
+        assert agent.system_prompt is not None
+        assert f"def {tool.name}(" in agent.system_prompt
+        assert f'"""{tool.description}' in agent.system_prompt
 
     def test_module_imports_get_baked_in_system_prompt(self):
         agent = CodeAgent(tools=[], model=fake_code_model)
