@@ -120,7 +120,7 @@ import numpy as np
     def test_multiple_code_blobs(self):
         test_input = "```\nFoo\n```\n\n```py\ncode_a\n````\n\n```python\ncode_b\n```"
         result = parse_code_blobs(test_input)
-        assert result == "nFoo\n\ncode_a\n\ncode_b"
+        assert result == "Foo\n\ncode_a\n\ncode_b"
 
 
 @pytest.fixture(scope="function")
