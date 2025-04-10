@@ -59,6 +59,12 @@ def parse_arguments():
         help="The model ID to use for the specified model type",
     )
     parser.add_argument(
+        "--provider",
+        type=str,
+        default="hf-inference",
+        help="The provider for HfApiModel - will not be used for LiteLLMModel",
+    )
+    parser.add_argument(
         "--agent-action-type",
         type=str,
         default="code",
@@ -235,7 +241,7 @@ if __name__ == "__main__":
             max_completion_tokens=8192,
         )
     else:
-        model = HfApiModel(model_id=args.model_id, max_tokens=8192)
+        model = HfApiModel(model_id=args.model_id, provider=args.provider, max_tokens=8192)
 
     answer_questions(
         eval_ds,
