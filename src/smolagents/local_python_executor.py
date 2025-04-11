@@ -24,7 +24,6 @@ import re
 from collections.abc import Mapping
 from functools import wraps
 from importlib import import_module
-from importlib.util import find_spec
 from types import BuiltinFunctionType, FunctionType, ModuleType
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -217,6 +216,29 @@ def fix_final_answer_code(code: str) -> str:
     return code
 
 
+def build_import_tree(authorized_imports: List[str]) -> Dict[str, Set[str]]:
+    tree = {}
+    for import_path in authorized_imports:
+        parts = import_path.split(".")
+        current = tree
+        for part in parts:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+    return tree
+
+
+def check_module_authorized(import_to_check: str, authorized_imports: list[str]) -> bool:
+    current_node = build_import_tree(authorized_imports)
+    for part in import_to_check.split("."):
+        if "*" in current_node:
+            return True
+        if part not in current_node:
+            return False
+        current_node = current_node[part]
+    return True
+
+
 def safer_eval(func: Callable):
     """
     Decorator to make the evaluation of a function safer by checking its return value.
@@ -237,36 +259,21 @@ def safer_eval(func: Callable):
         authorized_imports=BASE_BUILTIN_MODULES,
     ):
         result = func(expression, state, static_tools, custom_tools, authorized_imports=authorized_imports)
-        if "*" not in authorized_imports:
-            if isinstance(result, ModuleType):
-                for module_name in DANGEROUS_MODULES:
-                    if (
-                        module_name not in authorized_imports
-                        and result.__name__ == module_name
-                        # builtins has no __file__ attribute
-                        and getattr(result, "__file__", "")
-                        == (getattr(import_module(module_name), "__file__", "") if find_spec(module_name) else "")
-                    ):
-                        raise InterpreterError(f"Forbidden access to module: {module_name}")
-            elif isinstance(result, dict) and result.get("__spec__"):
-                for module_name in DANGEROUS_MODULES:
-                    if (
-                        module_name not in authorized_imports
-                        and result["__name__"] == module_name
-                        # builtins has no __file__ attribute
-                        and result.get("__file__", "")
-                        == (getattr(import_module(module_name), "__file__", "") if find_spec(module_name) else "")
-                    ):
-                        raise InterpreterError(f"Forbidden access to module: {module_name}")
-            elif isinstance(result, (FunctionType, BuiltinFunctionType)):
-                for qualified_function_name in DANGEROUS_FUNCTIONS:
-                    module_name, function_name = qualified_function_name.rsplit(".", 1)
-                    if (
-                        function_name not in static_tools
-                        and result.__name__ == function_name
-                        and result.__module__ == module_name
-                    ):
-                        raise InterpreterError(f"Forbidden access to function: {function_name}")
+        if isinstance(result, ModuleType):
+            if not check_module_authorized(result.__name__, authorized_imports):
+                raise InterpreterError(f"Forbidden access to module: {result.__name__}")
+        elif isinstance(result, dict) and result.get("__spec__"):
+            if not check_module_authorized(result["__name__"], authorized_imports):
+                raise InterpreterError(f"Forbidden access to module: {result['__name__']}")
+        elif isinstance(result, (FunctionType, BuiltinFunctionType)):
+            for qualified_function_name in DANGEROUS_FUNCTIONS:
+                module_name, function_name = qualified_function_name.rsplit(".", 1)
+                if (
+                    function_name not in static_tools
+                    and result.__name__ == function_name
+                    and result.__module__ == module_name
+                ):
+                    raise InterpreterError(f"Forbidden access to function: {function_name}")
         return result
 
     return _check_return
@@ -1095,16 +1102,6 @@ def get_safe_module(raw_module, authorized_imports, visited=None):
         setattr(safe_module, attr_name, attr_value)
 
     return safe_module
-
-
-def check_module_authorized(module_name, authorized_imports):
-    if "*" in authorized_imports:
-        return True
-    else:
-        module_path = module_name.split(".")
-        # ["A", "B", "C"] -> ["A", "A.B", "A.B.C"]
-        module_subpaths = [".".join(module_path[:i]) for i in range(1, len(module_path) + 1)]
-        return any(subpath in authorized_imports for subpath in module_subpaths)
 
 
 def evaluate_import(expression, state, authorized_imports):

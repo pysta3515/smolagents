@@ -511,20 +511,24 @@ if char.isalpha():
         code = "from numpy.random import default_rng as d_rng\nrng = d_rng(12345)\nrng.random()"
         result, _ = evaluate_python_code(code, BASE_PYTHON_TOOLS, state={}, authorized_imports=["numpy.random"])
 
-        # Test that importing numpy imports submodules
-        code = "import numpy as np\nnp.random.default_rng(12345)\nnp.random.random()"
-        result, _ = evaluate_python_code(code, BASE_PYTHON_TOOLS, state={}, authorized_imports=["numpy"])
-
     def test_additional_imports(self):
         code = "import numpy as np"
         evaluate_python_code(code, authorized_imports=["numpy"], state={})
 
+        # Test that allowing 'numpy.*' allows submodules
+        code = "import numpy as np\nnp.random.default_rng(12345)\nnp.random.random()"
+        result, _ = evaluate_python_code(code, BASE_PYTHON_TOOLS, state={}, authorized_imports=["numpy.*"])
+
         code = "import numpy.random as rd"
         evaluate_python_code(code, authorized_imports=["numpy.random"], state={})
-        evaluate_python_code(code, authorized_imports=["numpy"], state={})
+        evaluate_python_code(code, authorized_imports=["numpy.*"], state={})
         evaluate_python_code(code, authorized_imports=["*"], state={})
         with pytest.raises(InterpreterError):
             evaluate_python_code(code, authorized_imports=["random"], state={})
+
+        with pytest.raises(InterpreterError):
+            evaluate_python_code(code, authorized_imports=["numpy.a"], state={})
+        evaluate_python_code(code, authorized_imports=["numpy.a.*"], state={})
 
     def test_multiple_comparators(self):
         code = "0 <= -1 < 4 and 0 <= -5 < 4"
