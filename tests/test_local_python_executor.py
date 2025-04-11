@@ -31,7 +31,7 @@ from smolagents.local_python_executor import (
     InterpreterError,
     LocalPythonExecutor,
     PrintContainer,
-    check_module_authorized,
+    check_import_authorized,
     evaluate_condition,
     evaluate_delete,
     evaluate_python_code,
@@ -1580,14 +1580,14 @@ class TestPrintContainer:
         ("AnyModule", ["*"], True),
         ("os", ["os"], True),
         ("AnyModule", ["AnyModule"], True),
-        ("Module.os", ["Module"], True),
-        ("Module.os", ["Module", "os"], True),
-        ("os.path", ["os"], True),
-        ("os", ["os.path"], False),
+        ("Module.os", ["Module"], False),
+        ("Module.os", ["Module", "Module.os"], True),
+        ("os.path", ["os.*"], True),
+        ("os", ["os.path"], True),
     ],
 )
-def test_check_module_authorized(module: str, authorized_imports: list[str], expected: bool):
-    assert check_module_authorized(module, authorized_imports) == expected
+def test_check_import_authorized(module: str, authorized_imports: list[str], expected: bool):
+    assert check_import_authorized(module, authorized_imports) == expected
 
 
 class TestLocalPythonExecutor:

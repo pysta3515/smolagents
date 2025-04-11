@@ -234,7 +234,7 @@ def build_import_tree(authorized_imports: List[str]) -> Dict[str, Set[str]]:
     return tree
 
 
-def check_module_authorized(import_to_check: str, authorized_imports: list[str]) -> bool:
+def check_import_authorized(import_to_check: str, authorized_imports: list[str]) -> bool:
     current_node = build_import_tree(authorized_imports)
     for part in import_to_check.split("."):
         if "*" in current_node:
@@ -266,10 +266,10 @@ def safer_eval(func: Callable):
     ):
         result = func(expression, state, static_tools, custom_tools, authorized_imports=authorized_imports)
         if isinstance(result, ModuleType):
-            if not check_module_authorized(result.__name__, authorized_imports):
+            if not check_import_authorized(result.__name__, authorized_imports):
                 raise InterpreterError(f"Forbidden access to module: {result.__name__}")
         elif isinstance(result, dict) and result.get("__spec__"):
-            if not check_module_authorized(result["__name__"], authorized_imports):
+            if not check_import_authorized(result["__name__"], authorized_imports):
                 raise InterpreterError(f"Forbidden access to module: {result['__name__']}")
         elif isinstance(result, (FunctionType, BuiltinFunctionType)):
             for qualified_function_name in DANGEROUS_FUNCTIONS:
@@ -1113,7 +1113,7 @@ def get_safe_module(raw_module, authorized_imports, visited=None):
 def evaluate_import(expression, state, authorized_imports):
     if isinstance(expression, ast.Import):
         for alias in expression.names:
-            if check_module_authorized(alias.name, authorized_imports):
+            if check_import_authorized(alias.name, authorized_imports):
                 raw_module = import_module(alias.name)
                 state[alias.asname or alias.name] = get_safe_module(raw_module, authorized_imports)
             else:
@@ -1122,7 +1122,7 @@ def evaluate_import(expression, state, authorized_imports):
                 )
         return None
     elif isinstance(expression, ast.ImportFrom):
-        if check_module_authorized(expression.module, authorized_imports):
+        if check_import_authorized(expression.module, authorized_imports):
             raw_module = __import__(expression.module, fromlist=[alias.name for alias in expression.names])
             module = get_safe_module(raw_module, authorized_imports)
             if expression.names[0].name == "*":  # Handle "from module import *"
