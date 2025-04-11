@@ -1576,7 +1576,7 @@ class TestPrintContainer:
 @pytest.mark.parametrize(
     "module,authorized_imports,expected",
     [
-        ("os", ["*"], True),
+        ("os", ["other", "*"], True),
         ("AnyModule", ["*"], True),
         ("os", ["os"], True),
         ("AnyModule", ["AnyModule"], True),
