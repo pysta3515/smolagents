@@ -528,7 +528,8 @@ if char.isalpha():
 
         with pytest.raises(InterpreterError):
             evaluate_python_code(code, authorized_imports=["numpy.a"], state={})
-        evaluate_python_code(code, authorized_imports=["numpy.a.*"], state={})
+        with pytest.raises(InterpreterError):
+            evaluate_python_code(code, authorized_imports=["numpy.a.*"], state={})
 
     def test_multiple_comparators(self):
         code = "0 <= -1 < 4 and 0 <= -5 < 4"
