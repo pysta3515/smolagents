@@ -57,10 +57,12 @@ MAX_WHILE_ITERATIONS = 1000000
 def custom_print(*args):
     return None
 
+
 def nodunder_getattr(obj, name, default=None):
     if name.startswith("__") and name.endswith("__"):
         raise InterpreterError(f"Forbidden access to dunder attribute: {name}")
     return getattr(obj, name, default)
+
 
 BASE_PYTHON_TOOLS = {
     "print": custom_print,

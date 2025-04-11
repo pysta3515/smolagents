@@ -1808,7 +1808,7 @@ class TestLocalPythonExecutorSecurity:
             (
                 "import queue; queue.threading._os.system(':')",
                 [],
-                InterpreterError("Forbidden access to module: os"),
+                InterpreterError("Forbidden access to module: threading"),
             ),
             (
                 "import queue; queue.threading._os.system(':')",
@@ -1824,7 +1824,7 @@ class TestLocalPythonExecutorSecurity:
             (
                 "import doctest; doctest.inspect.os.system(':')",
                 ["doctest"],
-                InterpreterError("Forbidden access to module: os"),
+                InterpreterError("Forbidden access to module: inspect"),
             ),
             (
                 "import doctest; doctest.inspect.os.system(':')",
@@ -1835,23 +1835,23 @@ class TestLocalPythonExecutorSecurity:
             (
                 "import asyncio; asyncio.base_events.events.subprocess",
                 ["asyncio"],
-                InterpreterError("Forbidden access to module: subprocess"),
+                InterpreterError("Forbidden access to module: asyncio.base_events"),
             ),
             (
                 "import asyncio; asyncio.base_events.events.subprocess",
                 ["asyncio", "asyncio.base_events"],
-                InterpreterError("Forbidden access to module: subprocess"),
+                InterpreterError("Forbidden access to module: asyncio.events"),
             ),
             (
                 "import asyncio; asyncio.base_events.events.subprocess",
                 ["asyncio", "asyncio.base_events", "asyncio.base_events.events"],
-                InterpreterError("Forbidden access to module: subprocess"),
+                InterpreterError("Forbidden access to module: asyncio.events"),
             ),
             # sys submodule
             (
                 "import queue; queue.threading._sys.modules['os'].system(':')",
                 [],
-                InterpreterError("Forbidden access to module: sys"),
+                InterpreterError("Forbidden access to module: threading"),
             ),
             (
                 "import queue; queue.threading._sys.modules['os'].system(':')",
