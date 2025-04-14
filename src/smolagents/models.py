@@ -194,7 +194,7 @@ def get_clean_message_list(
     message_list: List[Dict[str, str]],
     role_conversions: Dict[MessageRole, MessageRole] = {},
     convert_images_to_image_urls: bool = False,
-    flatten_messages_as_text: Optional[str] = None,
+    flatten_messages_as_text: str = "auto",
 ) -> List[Dict[str, str]]:
     """
     Cleans message list to pass to inference. Subsequent messages with the same role will be concatenated to a single message.
@@ -280,7 +280,7 @@ def get_tool_call_from_text(text: str, tool_name_key: str, tool_arguments_key: s
 class Model:
     def __init__(
         self,
-        flatten_messages_as_text: str = "auto",
+        flatten_messages_as_text: Optional[str] = None,
         tool_name_key: str = "name",
         tool_arguments_key: str = "arguments",
         **kwargs,
