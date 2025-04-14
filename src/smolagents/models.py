@@ -581,7 +581,7 @@ class MLXModel(Model):
         trust_remote_code: bool = False,
         **kwargs,
     ):
-        super().__init__(flatten_messages_as_text=True, **kwargs)  # mlx-lm doesn't support vision models
+        super().__init__(flatten_messages_as_text="always", **kwargs)  # mlx-lm doesn't support vision models
         if not _is_package_available("mlx_lm"):
             raise ModuleNotFoundError(
                 "Please install 'mlx-lm' extra to use 'MLXModel': `pip install 'smolagents[mlx-lm]'`"

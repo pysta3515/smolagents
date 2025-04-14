@@ -378,15 +378,15 @@ def test_get_clean_message_list_flatten_messages_as_text():
 @pytest.mark.parametrize(
     "model_class, model_kwargs, patching, expected_flatten_messages_as_text",
     [
-        (AzureOpenAIServerModel, {}, ("openai.AzureOpenAI", {}), False),
-        (HfApiModel, {}, ("huggingface_hub.InferenceClient", {}), False),
-        (LiteLLMModel, {}, None, False),
-        (LiteLLMModel, {"model_id": "ollama"}, None, True),
-        (LiteLLMModel, {"model_id": "groq"}, None, True),
-        (LiteLLMModel, {"model_id": "cerebras"}, None, True),
-        (MLXModel, {}, ("mlx_lm.load", {"return_value": (MagicMock(), MagicMock())}), True),
-        (OpenAIServerModel, {}, ("openai.OpenAI", {}), False),
-        (OpenAIServerModel, {"flatten_messages_as_text": True}, ("openai.OpenAI", {}), True),
+        (AzureOpenAIServerModel, {}, ("openai.AzureOpenAI", {}), None),
+        (HfApiModel, {}, ("huggingface_hub.InferenceClient", {}), None),
+        (LiteLLMModel, {}, None, None),
+        (LiteLLMModel, {"model_id": "ollama"}, None, "always"),
+        (LiteLLMModel, {"model_id": "groq"}, None, "always"),
+        (LiteLLMModel, {"model_id": "cerebras"}, None, "always"),
+        (MLXModel, {}, ("mlx_lm.load", {"return_value": (MagicMock(), MagicMock())}), "always"),
+        (OpenAIServerModel, {}, ("openai.OpenAI", {}), None),
+        (OpenAIServerModel, {"flatten_messages_as_text": "always"}, ("openai.OpenAI", {}), "always"),
         (
             TransformersModel,
             {},
@@ -398,7 +398,7 @@ def test_get_clean_message_list_flatten_messages_as_text():
                 ("transformers.AutoModelForCausalLM.from_pretrained", {}),
                 ("transformers.AutoTokenizer.from_pretrained", {}),
             ],
-            True,
+            "auto",
         ),
         (
             TransformersModel,
@@ -407,7 +407,7 @@ def test_get_clean_message_list_flatten_messages_as_text():
                 ("transformers.AutoModelForImageTextToText.from_pretrained", {}),
                 ("transformers.AutoProcessor.from_pretrained", {}),
             ],
-            False,
+            "never",
         ),
     ],
 )
