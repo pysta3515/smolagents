@@ -1074,6 +1074,12 @@ class InferenceClientModel(ApiModel):
         return self.postprocess_message(first_message, tools_to_call_from)
 
 
+class HfApiModel(InferenceClientModel):
+    """HfApiModel has been renamed to InferenceClientModel to more closely follow the name of the underlying Inference library."""
+
+    pass
+
+
 class OpenAIServerModel(ApiModel):
     """This model connects to an OpenAI-compatible API server.
 
@@ -1401,6 +1407,7 @@ __all__ = [
     "TransformersModel",
     "ApiModel",
     "InferenceClientModel",
+    "HfApiModel",
     "LiteLLMModel",
     "OpenAIServerModel",
     "VLLMModel",
