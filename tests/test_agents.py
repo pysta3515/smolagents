@@ -1125,7 +1125,10 @@ class TestCodeAgent:
     @pytest.mark.parametrize("agent_dict_version", ["v1.9", "v1.10"])
     def test_from_folder(self, agent_dict_version, get_agent_dict):
         agent_dict = get_agent_dict(agent_dict_version)
-        with patch("smolagents.agents.Path") as mock_path, patch("smolagents.models.InferenceClientModel") as mock_model:
+        with (
+            patch("smolagents.agents.Path") as mock_path,
+            patch("smolagents.models.InferenceClientModel") as mock_model,
+        ):
             import json
 
             mock_path.return_value.__truediv__.return_value.read_text.return_value = json.dumps(agent_dict)
