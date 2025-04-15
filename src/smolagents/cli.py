@@ -90,7 +90,7 @@ def load_model(
     model_id: str,
     api_base: str | None = None,
     api_key: str | None = None,
-    provider: str | None,
+    provider: str | None = None,
 ) -> Model:
     if model_type == "OpenAIServerModel":
         return OpenAIServerModel(
@@ -124,7 +124,7 @@ def run_smolagent(
     model_id: str,
     api_base: str | None = None,
     api_key: str | None = None,
-    provider: str | None,
+    provider: str | None = None,
     imports: list[str] | None = None,
 ) -> None:
     load_dotenv()
