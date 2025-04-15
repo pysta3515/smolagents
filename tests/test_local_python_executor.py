@@ -515,8 +515,12 @@ if char.isalpha():
         code = "import numpy as np"
         evaluate_python_code(code, authorized_imports=["numpy"], state={})
 
-        # Test that allowing 'numpy.*' allows submodules
-        code = "import numpy as np\nnp.random.default_rng(12345)\nnp.random.random()"
+        # Test that allowing 'numpy.*' allows numpy root package and its submodules
+        code = "import numpy as np\nnp.random.default_rng(123)\nnp.array([1, 2])"
+        result, _ = evaluate_python_code(code, BASE_PYTHON_TOOLS, state={}, authorized_imports=["numpy.*"])
+
+        # Test that allowing 'numpy.*' allows importing a submodule
+        code = "import numpy.random as rd\nrd.default_rng(12345)"
         result, _ = evaluate_python_code(code, BASE_PYTHON_TOOLS, state={}, authorized_imports=["numpy.*"])
 
         code = "import numpy.random as rd"
