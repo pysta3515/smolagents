@@ -151,9 +151,8 @@ class TestInferenceClientModel:
         model = InferenceClientModel(model_id="test-model", api_key="abc")
         assert model.client.token == "abc"
 
-        with pytest.raises(ValueError) as e:
-            _ = InferenceClientModel(model_id="test-model", token="abc", api_key="def")
-        assert "Received both `token` and `api_key` arguments." in str(e)
+        with pytest.raises(ValueError, match="Received both `token` and `api_key` arguments."):
+            InferenceClientModel(model_id="test-model", token="abc", api_key="def")
 
     @require_run_all
     def test_get_hfapi_message_no_tool(self):
