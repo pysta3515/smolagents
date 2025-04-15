@@ -19,7 +19,7 @@ import os
 
 from dotenv import load_dotenv
 
-from smolagents import CodeAgent, HfApiModel, LiteLLMModel, Model, OpenAIServerModel, Tool, TransformersModel
+from smolagents import CodeAgent, InferenceClientModel, LiteLLMModel, Model, OpenAIServerModel, Tool, TransformersModel
 from smolagents.default_tools import TOOL_MAPPING
 
 
@@ -38,8 +38,8 @@ def parse_arguments():
     parser.add_argument(
         "--model-type",
         type=str,
-        default="HfApiModel",
-        help="The model type to use (e.g., HfApiModel, OpenAIServerModel, LiteLLMModel, TransformersModel)",
+        default="InferenceClientModel",
+        help="The model type to use (e.g., InferenceClientModel, OpenAIServerModel, LiteLLMModel, TransformersModel)",
     )
     parser.add_argument(
         "--model-id",
@@ -94,8 +94,8 @@ def load_model(model_type: str, model_id: str, api_base: str | None = None, api_
         )
     elif model_type == "TransformersModel":
         return TransformersModel(model_id=model_id, device_map="auto")
-    elif model_type == "HfApiModel":
-        return HfApiModel(
+    elif model_type == "InferenceClientModel":
+        return InferenceClientModel(
             model_id=model_id,
             token=api_key or os.getenv("HF_API_KEY"),
         )

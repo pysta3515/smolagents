@@ -963,7 +963,7 @@ class LiteLLMModel(ApiModel):
         return self.postprocess_message(first_message, tools_to_call_from)
 
 
-class HfApiModel(ApiModel):
+class InferenceClientModel(ApiModel):
     """A class to interact with Hugging Face's Inference Providers for language model interaction.
 
     This model allows you to communicate with Hugging Face's models using Inference Providers. It can be used in both serverless mode or with a dedicated endpoint, supporting features like stop sequences and grammar customization.
@@ -990,7 +990,7 @@ class HfApiModel(ApiModel):
             Custom role conversion mapping to convert message roles in others.
             Useful for specific models that do not support specific message roles like "system".
         api_key (`str`, *optional*):
-            Token to use for authentication. This is a duplicated argument from `token` to make [`HfApiModel`]
+            Token to use for authentication. This is a duplicated argument from `token` to make [`InferenceClientModel`]
             follow the same pattern as `openai.OpenAI` client. Cannot be used if `token` is set. Defaults to None.
         **kwargs:
             Additional keyword arguments to pass to the Hugging Face API.
@@ -1001,7 +1001,7 @@ class HfApiModel(ApiModel):
 
     Example:
     ```python
-    >>> engine = HfApiModel(
+    >>> engine = InferenceClientModel(
     ...     model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
     ...     provider="together",
     ...     token="your_hf_token_here",
@@ -1400,7 +1400,7 @@ __all__ = [
     "MLXModel",
     "TransformersModel",
     "ApiModel",
-    "HfApiModel",
+    "InferenceClientModel",
     "LiteLLMModel",
     "OpenAIServerModel",
     "VLLMModel",
