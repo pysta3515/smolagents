@@ -79,7 +79,7 @@ def parse_arguments():
     group.add_argument(
         "--provider",
         type=str,
-        default="hf-inference",
+        default=None,
         help="The inference provider to use for the model",
     )
     return parser.parse_args()
