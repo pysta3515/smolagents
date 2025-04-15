@@ -90,7 +90,7 @@ def load_model(
     model_id: str,
     api_base: str | None = None,
     api_key: str | None = None,
-    provider: str | None = "hf-inference",
+    provider: str | None,
 ) -> Model:
     if model_type == "OpenAIServerModel":
         return OpenAIServerModel(
