@@ -77,7 +77,7 @@ agent.push_to_hub("m-ric/my_agent")
 Our library is LLM-agnostic: you could switch the example above to any inference provider.
 
 <details>
-<summary> <b>HfApiModel, gateway for 4 inference providers</b></summary>
+<summary> <b>HfApiModel, gateway for all <a href="https://huggingface.co/docs/inference-providers/index">inference providers</a> supported on HF</b></summary>
 
 ```py
 from smolagents import HfApiModel
