@@ -1075,9 +1075,12 @@ class InferenceClientModel(ApiModel):
 
 
 class HfApiModel(InferenceClientModel):
-    """HfApiModel has been renamed to InferenceClientModel to more closely follow the name of the underlying Inference library."""
-
-    pass
+    def __new__(cls, *args, **kwargs):
+        warnings.warn(
+            "HfApiModel has been renamed to InferenceClientModel to more closely follow the name of the underlying Inference library.",
+            DeprecationWarning,
+        )
+        return super().__new__(cls, *args, **kwargs)
 
 
 class OpenAIServerModel(ApiModel):
