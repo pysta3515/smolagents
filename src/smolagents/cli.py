@@ -76,10 +76,16 @@ def parse_arguments():
         type=str,
         help="The API key for the model",
     )
+    group.add_argument(
+        "--provider",
+        type=str,
+        default="hf-inference",
+        help="The inference provider to use for the model",
+    )
     return parser.parse_args()
 
 
-def load_model(model_type: str, model_id: str, api_base: str | None = None, api_key: str | None = None) -> Model:
+def load_model(model_type: str, model_id: str, api_base: str | None = None, api_key: str | None = None, provider: str | None = "hf-inference") -> Model:
     if model_type == "OpenAIServerModel":
         return OpenAIServerModel(
             api_key=api_key or os.getenv("FIREWORKS_API_KEY"),
@@ -95,9 +101,11 @@ def load_model(model_type: str, model_id: str, api_base: str | None = None, api_
     elif model_type == "TransformersModel":
         return TransformersModel(model_id=model_id, device_map="auto")
     elif model_type == "HfApiModel":
+        print(f"Using provider: {provider}")
         return HfApiModel(
             model_id=model_id,
             token=api_key or os.getenv("HF_API_KEY"),
+            provider=provider,
         )
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -110,11 +118,12 @@ def run_smolagent(
     model_id: str,
     api_base: str | None = None,
     api_key: str | None = None,
+    provider: str | None = "hf-inference",
     imports: list[str] | None = None,
 ) -> None:
     load_dotenv()
 
-    model = load_model(model_type, model_id, api_base=api_base, api_key=api_key)
+    model = load_model(model_type, model_id, api_base=api_base, api_key=api_key, provider=provider)
 
     available_tools = []
     for tool_name in tools:
@@ -141,6 +150,7 @@ def main() -> None:
         args.model_id,
         api_base=args.api_base,
         api_key=args.api_key,
+        provider=args.provider,
         imports=args.imports,
     )
 
