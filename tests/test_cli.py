@@ -65,11 +65,11 @@ def test_cli_main(capsys):
         with patch("smolagents.cli.CodeAgent") as mock_code_agent:
             from smolagents.cli import run_smolagent
 
-            run_smolagent("test_prompt", [], "HfApiModel", "test_model_id")
+            run_smolagent("test_prompt", [], "HfApiModel", "test_model_id", provider="hf-inference")
     # load_model
     assert len(mock_load_model.call_args_list) == 1
     assert mock_load_model.call_args.args == ("HfApiModel", "test_model_id")
-    assert mock_load_model.call_args.kwargs == {"api_base": None, "api_key": None}
+    assert mock_load_model.call_args.kwargs == {"api_base": None, "api_key": None, "provider": "hf-inference"}
     # CodeAgent
     assert len(mock_code_agent.call_args_list) == 1
     assert mock_code_agent.call_args.args == ()
@@ -93,10 +93,11 @@ def test_vision_web_browser_main():
             with patch("smolagents.vision_web_browser.CodeAgent") as mock_code_agent:
                 from smolagents.vision_web_browser import helium_instructions, run_webagent
 
-                run_webagent("test_prompt", "HfApiModel", "test_model_id")
+                run_webagent("test_prompt", "HfApiModel", "test_model_id", provider="hf-inference")
     # load_model
     assert len(mock_load_model.call_args_list) == 1
     assert mock_load_model.call_args.args == ("HfApiModel", "test_model_id")
+    assert mock_load_model.call_args.kwargs == {"api_base": None, "api_key": None, "provider": "hf-inference"}
     # CodeAgent
     assert len(mock_code_agent.call_args_list) == 1
     assert mock_code_agent.call_args.args == ()

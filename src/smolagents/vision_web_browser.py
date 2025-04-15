@@ -198,7 +198,7 @@ def run_webagent(prompt: str, model_type: str, model_id: str, provider: str) -> 
     load_dotenv()
 
     # Initialize the model based on the provided arguments
-    model = load_model(model_type, model_id, provider=provider)
+    model = load_model(model_type, model_id, provider=provider, api_base=None, api_key=None)
 
     global driver
     driver = initialize_driver()
