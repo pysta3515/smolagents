@@ -222,7 +222,7 @@ def fix_final_answer_code(code: str) -> str:
     return code
 
 
-def build_import_tree(authorized_imports: List[str]) -> Dict[str, Set[str]]:
+def build_import_tree(authorized_imports: List[str]) -> Dict[str, Any]:
     tree = {}
     for import_path in authorized_imports:
         parts = import_path.split(".")
