@@ -169,12 +169,13 @@ class MonitoringTester(unittest.TestCase):
         self.assertEqual(final_message.content["mime_type"], "image/png")
 
     def test_streaming_with_agent_error(self):
-        def dummy_model(prompt, **kwargs):
-            return ChatMessage(role="assistant", content="Malformed call")
+        class DummyModel(Model):
+            def generate(self, prompt, **kwargs):
+                return ChatMessage(role="assistant", content="Malformed call")
 
         agent = CodeAgent(
             tools=[],
-            model=dummy_model,
+            model=DummyModel(),
             max_steps=1,
         )
 

@@ -23,8 +23,6 @@ from enum import Enum
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
 
-from transformers import TextIteratorStreamer
-
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
 
@@ -35,7 +33,8 @@ if TYPE_CHECKING:
         ChatCompletionOutputMessage,
         ChatCompletionOutputToolCall,
     )
-    from transformers import StoppingCriteriaList
+    from transformers import StoppingCriteriaList, TextIteratorStreamer
+
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +299,7 @@ class Model:
         flatten_messages_as_text: bool = False,
         tool_name_key: str = "name",
         tool_arguments_key: str = "arguments",
+        model_id: str | None = None,
         **kwargs,
     ):
         self.flatten_messages_as_text = flatten_messages_as_text
@@ -308,7 +308,7 @@ class Model:
         self.kwargs = kwargs
         self.last_input_token_count: int | None = None
         self.last_output_token_count: int | None = None
-        self.model_id: str | None = None
+        self.model_id: str | None = model_id
 
     def _prepare_completion_kwargs(
         self,
@@ -494,7 +494,7 @@ class VLLMModel(Model):
 
         self.model_kwargs = {
             **(model_kwargs or {}),
-            "model": model_id,
+            "model_id": model_id,
         }
         super().__init__(**kwargs)
         self.model_id = model_id
@@ -628,7 +628,9 @@ class MLXModel(Model):
         trust_remote_code: bool = False,
         **kwargs,
     ):
-        super().__init__(flatten_messages_as_text=True, **kwargs)  # mlx-lm doesn't support vision models
+        super().__init__(
+            flatten_messages_as_text=True, model_id=model_id, **kwargs
+        )  # mlx-lm doesn't support vision models
         if not _is_package_available("mlx_lm"):
             raise ModuleNotFoundError(
                 "Please install 'mlx-lm' extra to use 'MLXModel': `pip install 'smolagents[mlx-lm]'`"
@@ -747,7 +749,6 @@ class TransformersModel(Model):
                 FutureWarning,
             )
             model_id = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
-        self.model_id = model_id
 
         default_max_tokens = 5000
         max_new_tokens = kwargs.get("max_new_tokens") or kwargs.get("max_tokens")
@@ -783,7 +784,7 @@ class TransformersModel(Model):
                 raise e
         except Exception as e:
             raise ValueError(f"Failed to load tokenizer and model for {model_id=}: {e}") from e
-        super().__init__(flatten_messages_as_text=not self._is_vlm, **kwargs)
+        super().__init__(flatten_messages_as_text=not self._is_vlm, model_id=model_id, **kwargs)
 
     def make_stopping_criteria(self, stop_sequences: List[str], tokenizer) -> "StoppingCriteriaList":
         from transformers import StoppingCriteria, StoppingCriteriaList
@@ -947,8 +948,7 @@ class ApiModel(Model):
     def __init__(
         self, model_id: str, custom_role_conversions: dict[str, str] | None = None, client: Any | None = None, **kwargs
     ):
-        super().__init__(**kwargs)
-        self.model_id = model_id
+        super().__init__(model_id=model_id, **kwargs)
         self.custom_role_conversions = custom_role_conversions or {}
         self.client = client or self.create_client()
 
@@ -1486,7 +1486,6 @@ class AmazonBedrockServerModel(ApiModel):
         custom_role_conversions: dict[str, str] | None = None,
         **kwargs,
     ):
-        self.model_id = model_id
         self.client_kwargs = client_kwargs or {}
 
         # Bedrock only supports `assistant` and `user` roles.
