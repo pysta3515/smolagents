@@ -535,16 +535,11 @@ class VLLMModel(Model):
         output_text = out[0].outputs[0].text
         self.last_input_token_count = len(out[0].prompt_token_ids)
         self.last_output_token_count = len(out[0].outputs[0].token_ids)
-        chat_message = ChatMessage(
+        return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
             raw={"out": output_text, "completion_kwargs": completion_kwargs},
         )
-        if tools_to_call_from:
-            chat_message.tool_calls = [
-                get_tool_call_from_text(output_text, self.tool_name_key, self.tool_arguments_key)
-            ]
-        return chat_message
 
 
 class MLXModel(Model):
@@ -607,7 +602,7 @@ class MLXModel(Model):
         self.tool_arguments_key = tool_arguments_key
         self.is_vlm = False  # mlx-lm doesn't support vision models
 
-    def __call__(
+    def generate(
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: Optional[List[str]] = None,
@@ -643,12 +638,9 @@ class MLXModel(Model):
                 text = text[:stop_index]
                 break
 
-        chat_message = ChatMessage(
+        return ChatMessage(
             role=MessageRole.ASSISTANT, content=text, raw={"out": text, "completion_kwargs": completion_kwargs}
         )
-        if tools_to_call_from:
-            chat_message.tool_calls = [get_tool_call_from_text(text, self.tool_name_key, self.tool_arguments_key)]
-        return chat_message
 
 
 class TransformersModel(Model):
