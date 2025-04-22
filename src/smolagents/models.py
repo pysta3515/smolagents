@@ -19,7 +19,10 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
+from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
+
+from transformers import TextIteratorStreamer
 
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
@@ -779,6 +782,20 @@ class TransformersModel(Model):
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
     ) -> ChatMessage:
+        output_text = ""
+        for output in self.generate_stream(messages, stop_sequences, grammar, tools_to_call_from, **kwargs):
+            if output.content:
+                output_text += output.content
+        return ChatMessage(role=MessageRole.ASSISTANT, content=output_text)
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str | list[dict]]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        tools_to_call_from: Optional[List[Tool]] = None,
+        **kwargs,
+    ) -> Generator:
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -794,10 +811,9 @@ class TransformersModel(Model):
             or kwargs.get("max_tokens")
             or self.kwargs.get("max_new_tokens")
             or self.kwargs.get("max_tokens")
+            or 1024
         )
-
-        if max_new_tokens:
-            completion_kwargs["max_new_tokens"] = max_new_tokens
+        model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
 
         if hasattr(self, "processor"):
             prompt_tensor = self.processor.apply_chat_template(
@@ -813,46 +829,42 @@ class TransformersModel(Model):
                 messages,  # type: ignore
                 tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
                 return_tensors="pt",
-                return_dict=True,
                 add_generation_prompt=True if tools_to_call_from else False,
             )
 
         prompt_tensor = prompt_tensor.to(self.model.device)
-        count_prompt_tokens = prompt_tensor["input_ids"].shape[1]
+        if hasattr(prompt_tensor, "input_ids"):
+            prompt_tensor = prompt_tensor["input_ids"]
 
-        if stop_sequences:
-            stopping_criteria = self.make_stopping_criteria(
-                stop_sequences, tokenizer=self.processor if hasattr(self, "processor") else self.tokenizer
-            )
-        else:
-            stopping_criteria = None
+        count_prompt_tokens = prompt_tensor.shape[1]  # type: ignore
 
-        out = self.model.generate(
-            **prompt_tensor,
+        stopping_criteria = (
+            self.make_stopping_criteria(stop_sequences, tokenizer=model_tokenizer) if stop_sequences else None
+        )
+
+        streamer = TextIteratorStreamer(model_tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
+
+        completion_kwargs["max_new_tokens"] = max_new_tokens
+        generation_kwargs = dict(
+            inputs=prompt_tensor,
+            streamer=streamer,
+            use_cache=True,
             stopping_criteria=stopping_criteria,
             **completion_kwargs,
         )
-        generated_tokens = out[0, count_prompt_tokens:]
-        if hasattr(self, "processor"):
-            output_text = self.processor.decode(generated_tokens, skip_special_tokens=True)
-        else:
-            output_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        thread.start()
+
+        self.last_output_token_count = 0
+
+        # Generate with streaming
+        for new_text in streamer:
+            yield CompletionDelta(content=new_text, tool_calls=None)
+            self.last_output_token_count += 1
+
         self.last_input_token_count = count_prompt_tokens
-        self.last_output_token_count = len(generated_tokens)
-
-        if stop_sequences is not None:
-            output_text = remove_stop_sequences(output_text, stop_sequences)
-
-        chat_message = ChatMessage(
-            role=MessageRole.ASSISTANT,
-            content=output_text,
-            raw={"out": output_text, "completion_kwargs": completion_kwargs},
-        )
-        if tools_to_call_from:
-            chat_message.tool_calls = [
-                get_tool_call_from_text(output_text, self.tool_name_key, self.tool_arguments_key)
-            ]
-        return chat_message
+        thread.join()
 
 
 class ApiModel(Model):
