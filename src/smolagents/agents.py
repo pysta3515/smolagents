@@ -33,15 +33,19 @@ import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
 from jinja2 import StrictUndefined, Template
 from rich.console import Group
+from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
+
+from smolagents.models import CompletionDelta
 
 
 if TYPE_CHECKING:
     import PIL.Image
 
-from .agent_types import AgentAudio, AgentImage, AgentType, handle_agent_output_types
+from .agent_types import AgentAudio, AgentImage, handle_agent_output_types
 from .default_tools import TOOL_MAPPING, FinalAnswerTool
 from .local_python_executor import BASE_BUILTIN_MODULES, LocalPythonExecutor, PythonExecutor, fix_final_answer_code
 from .memory import ActionStep, AgentMemory, FinalAnswerStep, PlanningStep, SystemPromptStep, TaskStep, ToolCall
@@ -95,7 +99,7 @@ class PlanningPromptTemplate(TypedDict):
         update_plan_post_messages (`str`): Update plan post-messages prompt.
     """
 
-    plan: str
+    initial_plan: str
     update_plan_pre_messages: str
     update_plan_post_messages: str
 
@@ -181,7 +185,7 @@ class MultiStepAgent(ABC):
     def __init__(
         self,
         tools: List[Tool],
-        model: Callable[[List[Dict[str, str]]], ChatMessage],
+        model: Model,
         prompt_templates: Optional[PromptTemplates] = None,
         max_steps: int = 20,
         add_base_tools: bool = False,
@@ -201,19 +205,19 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert (
-                not missing_keys
-            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
             for key in EMPTY_PROMPT_TEMPLATES.keys():
-                for subkey in EMPTY_PROMPT_TEMPLATES[key]:
-                    assert (
-                        subkey in prompt_templates[key]
-                    ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                for subkey in EMPTY_PROMPT_TEMPLATES[key].keys():
+                    assert subkey in prompt_templates[key].keys(), (
+                        f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                    )
         self.max_steps = max_steps
         self.step_number = 0
         self.grammar = grammar
         self.planning_interval = planning_interval
-        self.state = {}
+        self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
         self.description = description
         self.provide_run_summary = provide_run_summary
@@ -246,14 +250,10 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(
-                agent.name and agent.description for agent in managed_agents
-            ), "All managed agents need both a name and a description!"
+            assert all(agent.name and agent.description for agent in managed_agents), (
+                "All managed agents need both a name and a description!"
+            )
             self.managed_agents = {agent.name: agent for agent in managed_agents}
-            for agent in managed_agents:
-                # Create a separate console for managed agents to avoid nested Live objects
-                managed_console = Console()
-                agent.logger = AgentLogger(level=self.logger.level, console=managed_console, live=False)
 
     def _setup_tools(self, tools, add_base_tools):
         assert all(isinstance(tool, Tool) for tool in tools), "All elements must be instance of Tool (or a subclass)"
@@ -342,7 +342,7 @@ You have been provided with these additional arguments, that you can access usin
 
     def _run(
         self, task: str, max_steps: int, images: List["PIL.Image.Image"] | None = None
-    ) -> Generator[ActionStep | AgentType, None, None]:
+    ) -> Generator[ActionStep | FinalAnswerStep, None, None]:
         final_answer = None
         self.step_number = 1
         while final_answer is None and self.step_number <= max_steps:
@@ -490,9 +490,9 @@ You have been provided with these additional arguments, that you can access usin
         return [self.memory.system_prompt] + self.memory.steps
 
     @abstractmethod
-    def initialize_system_prompt(self):
+    def initialize_system_prompt(self) -> str:
         """To be implemented in child classes"""
-        pass
+        raise NotImplementedError("initialize_system_prompt must be implemented in child classes")
 
     def interrupt(self):
         """Interrupts the agent execution."""
@@ -1179,12 +1179,6 @@ class ToolCallingAgent(MultiStepAgent):
             raise AgentToolExecutionError(error_msg, self.logger) from e
 
 
-from rich.live import Live
-from rich.markdown import Markdown
-
-from smolagents.models import CompletionDelta
-
-
 class CodeAgent(MultiStepAgent):
     """
     In this agent, the tool calls will be formulated by the LLM in code format, then parsed and executed.
@@ -1282,7 +1276,6 @@ class CodeAgent(MultiStepAgent):
         memory_messages = self.write_memory_to_messages()
 
         self.input_messages = memory_messages.copy()
-
         # Add new step in logs
         memory_step.model_input_messages = memory_messages.copy()
         try:
