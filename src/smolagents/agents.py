@@ -208,11 +208,13 @@ class MultiStepAgent(ABC):
             assert not missing_keys, (
                 f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             )
-            for key in EMPTY_PROMPT_TEMPLATES.keys():
-                for subkey in EMPTY_PROMPT_TEMPLATES[key].keys():
-                    assert subkey in prompt_templates[key].keys(), (
-                        f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                    )
+            for key, value in EMPTY_PROMPT_TEMPLATES.items():
+                if isinstance(value, dict):
+                    for subkey in value.keys():
+                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
+                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        )
+
         self.max_steps = max_steps
         self.step_number = 0
         self.grammar = grammar

@@ -251,7 +251,7 @@ def get_tool_call_from_text(text: str, tool_name_key: str, tool_arguments_key: s
             f"Key {tool_name_key=} not found in the generated tool call. Got keys: {list(tool_call_dictionary.keys())} instead"
         ) from e
     tool_arguments = tool_call_dictionary.get(tool_arguments_key, None)
-    if tool_arguments is not None:
+    if isinstance(tool_arguments, str):
         tool_arguments = parse_json_if_needed(tool_arguments)
     return ChatMessageToolCall(
         id=str(uuid.uuid4()),
@@ -343,7 +343,7 @@ class Model:
         grammar: Optional[str] = None,
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
-    ) -> ChatMessage | Generator[ChatMessage, None, None]:
+    ) -> ChatMessage:
         """Process the input messages and return the model's response.
 
         Parameters:
@@ -371,6 +371,7 @@ class Model:
         message.role = MessageRole.ASSISTANT  # Overwrite role if needed
         if tools_to_call_from:
             if not message.tool_calls:
+                assert message.content is not None, "Message contains no content and no tool calls"
                 message.tool_calls = [
                     get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
                 ]
@@ -488,7 +489,7 @@ class VLLMModel(Model):
         grammar: Optional[str] = None,
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
-    ) -> ChatMessage | Generator[ChatMessage, None, None]:
+    ) -> ChatMessage:
         from vllm import SamplingParams  # type: ignore
 
         completion_kwargs = self._prepare_completion_kwargs(
@@ -809,7 +810,7 @@ class TransformersModel(Model):
             )
         else:
             prompt_tensor = self.tokenizer.apply_chat_template(
-                messages,
+                messages,  # type: ignore
                 tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
                 return_tensors="pt",
                 return_dict=True,
@@ -1005,8 +1006,7 @@ class LiteLLMModel(ApiModel):
                     yield CompletionDelta(
                         content=event.choices[0].delta.content,
                     )
-            else:
-                # The last event is a usage event
+            if getattr(event, "usage", None):
                 self.last_input_token_count = event.usage.prompt_tokens
                 self.last_output_token_count = event.usage.completion_tokens
 
@@ -1148,12 +1148,10 @@ class InferenceClientModel(ApiModel):
                     if not event.choices[0].finish_reason == "stop":
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    print(event.choices[0].delta)
                     yield CompletionDelta(
                         content=event.choices[0].delta.content,
                     )
-            else:
-                # The last event is a usage event
+            if getattr(event, "usage", None):
                 self.last_input_token_count = event.usage.prompt_tokens
                 self.last_output_token_count = event.usage.completion_tokens
 
@@ -1268,12 +1266,10 @@ class OpenAIServerModel(ApiModel):
                     if not event.choices[0].finish_reason == "stop":
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    print(event.choices[0].delta)
                     yield CompletionDelta(
                         content=event.choices[0].delta.content,
                     )
-            else:
-                # The last event is a usage event
+            if getattr(event, "usage", None):
                 self.last_input_token_count = event.usage.prompt_tokens
                 self.last_output_token_count = event.usage.completion_tokens
 
@@ -1497,7 +1493,7 @@ class AmazonBedrockServerModel(ApiModel):
 
     def create_client(self):
         try:
-            import boto3
+            import boto3  # type: ignore
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
                 "Please install 'bedrock' extra to use AmazonBedrockServerModel: `pip install 'smolagents[bedrock]'`"
@@ -1508,6 +1504,8 @@ class AmazonBedrockServerModel(ApiModel):
     def generate(
         self,
         messages: list[dict[str, str | list[dict]]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
     ) -> ChatMessage:
