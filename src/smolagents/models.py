@@ -867,10 +867,8 @@ class TransformersModel(Model):
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
-        prompt_tensor = generation_kwargs["inputs"].pop()
-        count_prompt_tokens = prompt_tensor.shape[1]  # type: ignore
+        count_prompt_tokens = generation_kwargs["inputs"].shape[1]  # type: ignore
         out = self.model.generate(
-            **prompt_tensor,
             **generation_kwargs,
         )
         generated_tokens = out[0, count_prompt_tokens:]
@@ -887,7 +885,10 @@ class TransformersModel(Model):
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
-            raw={"out": output_text, "completion_kwargs": generation_kwargs},
+            raw={
+                "out": output_text,
+                "completion_kwargs": {key: value for key, value in generation_kwargs.items() if key != "inputs"},
+            },
         )
 
     def generate_stream(
