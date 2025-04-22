@@ -33,7 +33,7 @@ if TYPE_CHECKING:
         ChatCompletionOutputMessage,
         ChatCompletionOutputToolCall,
     )
-    from transformers import StoppingCriteriaList, TextIteratorStreamer
+    from transformers import StoppingCriteriaList
 
 
 logger = logging.getLogger(__name__)
@@ -735,7 +735,13 @@ class TransformersModel(Model):
     ):
         try:
             import torch
-            from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
+            from transformers import (
+                AutoModelForCausalLM,
+                AutoModelForImageTextToText,
+                AutoProcessor,
+                AutoTokenizer,
+                TextIteratorStreamer,
+            )
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
                 "Please install 'transformers' extra to use 'TransformersModel': `pip install 'smolagents[transformers]'`"
@@ -771,6 +777,8 @@ class TransformersModel(Model):
             )
             self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=trust_remote_code)
             self._is_vlm = True
+            self.streamer = TextIteratorStreamer(self.processor.tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
+
         except ValueError as e:
             if "Unrecognized configuration class" in str(e):
                 self.model = AutoModelForCausalLM.from_pretrained(
@@ -780,6 +788,7 @@ class TransformersModel(Model):
                     trust_remote_code=trust_remote_code,
                 )
                 self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+                self.streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
             else:
                 raise e
         except Exception as e:
@@ -832,16 +841,19 @@ class TransformersModel(Model):
             or self.kwargs.get("max_tokens")
             or 1024
         )
-        model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
-        prompt_tensor = model_tokenizer.apply_chat_template(
+        prompt_tensor = (self.processor if hasattr(self, "processor") else self.tokenizer).apply_chat_template(
             messages,  # type: ignore
             tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
             return_tensors="pt",
             add_generation_prompt=True if tools_to_call_from else False,
-        ).to(self.model.device)
+            tokenize=True,
+            return_dict=True,
+        )
+        prompt_tensor = prompt_tensor.to(self.model.device)
         if hasattr(prompt_tensor, "input_ids"):
             prompt_tensor = prompt_tensor["input_ids"]
 
+        model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
         stopping_criteria = (
             self.make_stopping_criteria(stop_sequences, tokenizer=model_tokenizer) if stop_sequences else None
         )
@@ -900,9 +912,6 @@ class TransformersModel(Model):
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
     ) -> Generator:
-        model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
-        streamer = TextIteratorStreamer(model_tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
-
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -910,16 +919,15 @@ class TransformersModel(Model):
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
-        generation_kwargs["streamer"] = streamer
         count_prompt_tokens = generation_kwargs["inputs"].shape[1]  # type: ignore
 
-        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        thread = Thread(target=self.model.generate, kwargs={"streamer": self.streamer, **generation_kwargs})
         thread.start()
 
         self.last_output_token_count = 0
 
         # Generate with streaming
-        for new_text in streamer:
+        for new_text in self.streamer:
             yield CompletionDelta(content=new_text, tool_calls=None)
             self.last_output_token_count += 1
 
