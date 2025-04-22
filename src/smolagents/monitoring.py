@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from rich import box
 from rich.console import Console, Group
+from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
@@ -84,14 +85,30 @@ YELLOW_HEX = "#d4b702"
 
 
 class AgentLogger:
-    def __init__(self, level: LogLevel = LogLevel.INFO, console: Console | None = None):
+    def __init__(self, level: LogLevel = LogLevel.INFO, console: Console | None = None, live: bool = False):
         self.level = level
         if console is None:
             self.console = Console()
         else:
             self.console = console
+        self.live = None
+        self._live_enabled = live
+        if live:
+            self.start_live()
 
-    def log(self, *args, level: str | LogLevel = LogLevel.INFO, **kwargs) -> None:
+    def start_live(self) -> None:
+        """Start live streaming of logs."""
+        if self._live_enabled and self.live is None:
+            self.live = Live(console=self.console)
+            self.live.start()
+
+    def stop_live(self) -> None:
+        """Stop live streaming of logs."""
+        if self.live is not None:
+            self.live.stop()
+            self.live = None
+
+    def log(self, *args, level: int | str | LogLevel = LogLevel.INFO, **kwargs) -> None:
         """Logs a message to the console.
 
         Args:
@@ -100,7 +117,10 @@ class AgentLogger:
         if isinstance(level, str):
             level = LogLevel[level.upper()]
         if level <= self.level:
-            self.console.print(*args, **kwargs)
+            if self.live is not None:
+                self.live.update(Group(*args), refresh=True)
+            else:
+                self.console.print(*args, **kwargs)
 
     def log_error(self, error_message: str) -> None:
         self.log(escape_code_brackets(error_message), style="bold red", level=LogLevel.ERROR)
@@ -153,7 +173,9 @@ class AgentLogger:
             level=LogLevel.INFO,
         )
 
-    def log_task(self, content: str, subtitle: str, title: Optional[str] = None, level: int = LogLevel.INFO) -> None:
+    def log_task(
+        self, content: str, subtitle: str, title: Optional[str] = None, level: LogLevel = LogLevel.INFO
+    ) -> None:
         self.log(
             Panel(
                 f"\n[bold]{escape_code_brackets(content)}\n",
@@ -165,7 +187,7 @@ class AgentLogger:
             level=level,
         )
 
-    def log_messages(self, messages: List) -> None:
+    def log_messages(self, messages: List[dict], level: LogLevel = LogLevel.DEBUG) -> None:
         messages_as_string = "\n".join([json.dumps(dict(message), indent=4) for message in messages])
         self.log(
             Syntax(
@@ -173,7 +195,8 @@ class AgentLogger:
                 lexer="markdown",
                 theme="github-dark",
                 word_wrap=True,
-            )
+            ),
+            level=level,
         )
 
     def visualize_agent_tree(self, agent):

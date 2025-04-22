@@ -19,7 +19,7 @@ logger = getLogger(__name__)
 
 class Message(TypedDict):
     role: MessageRole
-    content: str | list[dict]
+    content: str | list[Dict[str, Any]]
 
 
 @dataclass
@@ -57,7 +57,7 @@ class ActionStep(MemoryStep):
     step_number: int | None = None
     error: AgentError | None = None
     duration: float | None = None
-    model_output_message: ChatMessage = None
+    model_output_message: ChatMessage | None = None
     model_output: str | None = None
     observations: str | None = None
     observations_images: List["PIL.Image.Image"] | None = None

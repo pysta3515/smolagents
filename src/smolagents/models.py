@@ -19,7 +19,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Union
 
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
@@ -306,8 +306,8 @@ class Model:
         }
 
         # Handle specific parameters
-        if stop_sequences is not None:
-            completion_kwargs["stop"] = stop_sequences
+        # if stop_sequences is not None:
+        #     completion_kwargs["stop"] = stop_sequences
         if grammar is not None:
             completion_kwargs["grammar"] = grammar
 
@@ -415,12 +415,15 @@ class VLLMModel(Model):
             This can be a path or model identifier from the Hugging Face model hub.
         model_kwargs (`dict[str, Any]`, *optional*):
             Additional keyword arguments to pass to the vLLM model (like revision, max_model_len, etc.).
+        streaming (`bool`, *optional*):
+            Whether to stream the output tokens. Defaults to False.
     """
 
     def __init__(
         self,
         model_id,
         model_kwargs: dict[str, Any] | None = None,
+        streaming: bool = False,
         **kwargs,
     ):
         if not _is_package_available("vllm"):
@@ -438,6 +441,7 @@ class VLLMModel(Model):
         self.model = LLM(**self.model_kwargs)
         self.tokenizer = get_tokenizer(model_id)
         self._is_vlm = False  # VLLMModel does not support vision models yet.
+        self.streaming = streaming
 
     def cleanup(self):
         import gc
@@ -497,23 +501,37 @@ class VLLMModel(Model):
             stop=prepared_stop_sequences,
         )
 
-        out = self.model.generate(
-            prompt,
-            sampling_params=sampling_params,
-        )
-        output_text = out[0].outputs[0].text
-        self.last_input_token_count = len(out[0].prompt_token_ids)
-        self.last_output_token_count = len(out[0].outputs[0].token_ids)
-        chat_message = ChatMessage(
-            role=MessageRole.ASSISTANT,
-            content=output_text,
-            raw={"out": output_text, "completion_kwargs": completion_kwargs},
-        )
-        if tools_to_call_from:
-            chat_message.tool_calls = [
-                get_tool_call_from_text(output_text, self.tool_name_key, self.tool_arguments_key)
-            ]
-        return chat_message
+        if self.streaming:
+            output_text = ""
+            for output in self.model.generate(
+                prompt,
+                sampling_params=sampling_params,
+                stream=True,
+            ):
+                output_text += output.outputs[0].text
+                yield ChatMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=output_text,
+                    raw={"out": output_text, "completion_kwargs": completion_kwargs},
+                )
+        else:
+            out = self.model.generate(
+                prompt,
+                sampling_params=sampling_params,
+            )
+            output_text = out[0].outputs[0].text
+            self.last_input_token_count = len(out[0].prompt_token_ids)
+            self.last_output_token_count = len(out[0].outputs[0].token_ids)
+            chat_message = ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content=output_text,
+                raw={"out": output_text, "completion_kwargs": completion_kwargs},
+            )
+            if tools_to_call_from:
+                chat_message.tool_calls = [
+                    get_tool_call_from_text(output_text, self.tool_name_key, self.tool_arguments_key)
+                ]
+            return chat_message
 
 
 class MLXModel(Model):
@@ -1144,7 +1162,46 @@ class OpenAIServerModel(ApiModel):
 
         return openai.OpenAI(**self.client_kwargs)
 
-    def __call__(
+    def __call__(self, *args, **kwargs):
+        return self.generate(*args, **kwargs)
+
+    def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        tools_to_call_from: Optional[List[Tool]] = None,
+        **kwargs,
+    ) -> Generator:
+        completion_kwargs = self._prepare_completion_kwargs(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            grammar=grammar,
+            tools_to_call_from=tools_to_call_from,
+            model=self.model_id,
+            custom_role_conversions=self.custom_role_conversions,
+            convert_images_to_image_urls=True,
+            **kwargs,
+        )
+        for event in self.client.chat.completions.create(
+            **completion_kwargs, stream=True, stream_options={"include_usage": True}
+        ):
+            # self.last_input_token_count += event.usage.prompt_tokens
+            # self.last_output_token_count = event.usage.completion_tokens
+            if len(event.choices) == 0:
+                # This is a usage event
+                print("Usage should be : {event.usage}")
+            else:
+                print("OKKK", event.choices[0].delta)
+                if event.choices[0].delta.content is not None:
+                    yield event.choices[0].delta.content
+                elif event.choices[0].delta.tool_calls is not None:
+                    yield event.choices[0].delta.tool_calls
+                else:
+                    if not event.choices[0].finish_reason == "stop":
+                        raise ValueError(f"No content or tool calls in event: {event}")
+
+    def generate(
         self,
         messages: List[Dict[str, str]],
         stop_sequences: Optional[List[str]] = None,
@@ -1166,11 +1223,10 @@ class OpenAIServerModel(ApiModel):
         self.last_input_token_count = response.usage.prompt_tokens
         self.last_output_token_count = response.usage.completion_tokens
 
-        first_message = ChatMessage.from_dict(
+        return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
         )
-        return self.postprocess_message(first_message, tools_to_call_from)
 
 
 class AzureOpenAIServerModel(OpenAIServerModel):
