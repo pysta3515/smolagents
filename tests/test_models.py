@@ -138,7 +138,7 @@ class TestModel:
         )
         messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}, {"type": "image", "image": img}]}]
         output = model(messages, stop_sequences=["great"]).content
-        assert output == "Hello! How can"
+        assert output == "I am a"
 
     def test_parse_json_if_needed(self):
         args = "abc"

@@ -1291,7 +1291,6 @@ class CodeAgent(MultiStepAgent):
                                 live.update(Markdown(output_text))
                         elif isinstance(event, ToolCall):
                             memory_step.tool_calls = [event]
-                            live.update(Markdown(output_text))
 
                 model_output = output_text
                 chat_message = ChatMessage(role="assistant", content=model_output)
