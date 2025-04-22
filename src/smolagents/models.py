@@ -345,7 +345,7 @@ class Model:
         # Handle specific parameters
         if stop_sequences is not None:
             # Some models do not support stop parameter
-            if supports_stop_parameter(self.model_id):
+            if supports_stop_parameter(self.model_id or ""):
                 completion_kwargs["stop"] = stop_sequences
         if grammar is not None:
             completion_kwargs["grammar"] = grammar
@@ -405,17 +405,17 @@ class Model:
     def __call__(self, *args, **kwargs):
         return self.generate(*args, **kwargs)
 
-    def parse_tool_calls(self, message: ChatMessage, tools_to_call_from) -> ChatMessage:
+    def parse_tool_calls(self, message: ChatMessage) -> ChatMessage:
         """Sometimes APIs do not return the tool call as a specific object, so we need to parse it."""
         message.role = MessageRole.ASSISTANT  # Overwrite role if needed
-        if tools_to_call_from:
-            if not message.tool_calls:
-                assert message.content is not None, "Message contains no content and no tool calls"
-                message.tool_calls = [
-                    get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
-                ]
-            for tool_call in message.tool_calls:
-                tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
+        if not message.tool_calls:
+            assert message.content is not None, "Message contains no content and no tool calls"
+            message.tool_calls = [
+                get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
+            ]
+        assert len(message.tool_calls) > 0, "No tool call was found in the model output"
+        for tool_call in message.tool_calls:
+            tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
         return message
 
     def to_dict(self) -> Dict:
@@ -806,28 +806,14 @@ class TransformersModel(Model):
 
         return StoppingCriteriaList([StopOnStrings(stop_sequences, tokenizer)])
 
-    def generate(
+    def _prepare_completion_args(
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: Optional[List[str]] = None,
         grammar: Optional[str] = None,
         tools_to_call_from: Optional[List[Tool]] = None,
         **kwargs,
-    ) -> ChatMessage:
-        output_text = ""
-        for output in self.generate_stream(messages, stop_sequences, grammar, tools_to_call_from, **kwargs):
-            if output.content:
-                output_text += output.content
-        return ChatMessage(role=MessageRole.ASSISTANT, content=output_text)
-
-    def generate_stream(
-        self,
-        messages: list[dict[str, str | list[dict]]],
-        stop_sequences: Optional[List[str]] = None,
-        grammar: Optional[str] = None,
-        tools_to_call_from: Optional[List[Tool]] = None,
-        **kwargs,
-    ) -> Generator:
+    ) -> dict[str, Any]:
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -846,44 +832,84 @@ class TransformersModel(Model):
             or 1024
         )
         model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
-
-        if hasattr(self, "processor"):
-            prompt_tensor = self.processor.apply_chat_template(
-                messages,
-                tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
-                return_tensors="pt",
-                tokenize=True,
-                return_dict=True,
-                add_generation_prompt=True if tools_to_call_from else False,
-            )
-        else:
-            prompt_tensor = self.tokenizer.apply_chat_template(
-                messages,  # type: ignore
-                tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
-                return_tensors="pt",
-                add_generation_prompt=True if tools_to_call_from else False,
-            )
-
-        prompt_tensor = prompt_tensor.to(self.model.device)
+        prompt_tensor = model_tokenizer.apply_chat_template(
+            messages,  # type: ignore
+            tools=[get_tool_json_schema(tool) for tool in tools_to_call_from] if tools_to_call_from else None,
+            return_tensors="pt",
+            add_generation_prompt=True if tools_to_call_from else False,
+        ).to(self.model.device)
         if hasattr(prompt_tensor, "input_ids"):
             prompt_tensor = prompt_tensor["input_ids"]
-
-        count_prompt_tokens = prompt_tensor.shape[1]  # type: ignore
 
         stopping_criteria = (
             self.make_stopping_criteria(stop_sequences, tokenizer=model_tokenizer) if stop_sequences else None
         )
-
-        streamer = TextIteratorStreamer(model_tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
-
         completion_kwargs["max_new_tokens"] = max_new_tokens
-        generation_kwargs = dict(
+        return dict(
             inputs=prompt_tensor,
-            streamer=streamer,
             use_cache=True,
             stopping_criteria=stopping_criteria,
             **completion_kwargs,
         )
+
+    def generate(
+        self,
+        messages: list[dict[str, str | list[dict]]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        tools_to_call_from: Optional[List[Tool]] = None,
+        **kwargs,
+    ) -> ChatMessage:
+        generation_kwargs = self._prepare_completion_args(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            grammar=grammar,
+            tools_to_call_from=tools_to_call_from,
+            **kwargs,
+        )
+        prompt_tensor = generation_kwargs["inputs"].pop()
+        count_prompt_tokens = prompt_tensor.shape[1]  # type: ignore
+        out = self.model.generate(
+            **prompt_tensor,
+            **generation_kwargs,
+        )
+        generated_tokens = out[0, count_prompt_tokens:]
+        if hasattr(self, "processor"):
+            output_text = self.processor.decode(generated_tokens, skip_special_tokens=True)
+        else:
+            output_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        self.last_input_token_count = count_prompt_tokens
+        self.last_output_token_count = len(generated_tokens)
+
+        if stop_sequences is not None:
+            output_text = remove_stop_sequences(output_text, stop_sequences)
+
+        return ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content=output_text,
+            raw={"out": output_text, "completion_kwargs": generation_kwargs},
+        )
+
+    def generate_stream(
+        self,
+        messages: list[dict[str, str | list[dict]]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        tools_to_call_from: Optional[List[Tool]] = None,
+        **kwargs,
+    ) -> Generator:
+        model_tokenizer = self.processor.tokenizer if hasattr(self, "processor") else self.tokenizer
+        streamer = TextIteratorStreamer(model_tokenizer, skip_prompt=True, skip_special_tokens=True)  # type: ignore
+
+        generation_kwargs = self._prepare_completion_args(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            grammar=grammar,
+            tools_to_call_from=tools_to_call_from,
+            **kwargs,
+        )
+        generation_kwargs["streamer"] = streamer
+        count_prompt_tokens = generation_kwargs["inputs"].shape[1]  # type: ignore
 
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()

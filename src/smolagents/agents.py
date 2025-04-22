@@ -39,7 +39,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-from smolagents.models import CompletionDelta
+from smolagents.models import CompletionDelta, parse_json_if_needed
 
 
 if TYPE_CHECKING:
@@ -231,7 +231,7 @@ class MultiStepAgent(ABC):
 
         self.system_prompt = self.initialize_system_prompt()
         self.input_messages = None
-        self.task = None
+        self.task: str | None = None
         self.memory = AgentMemory(self.system_prompt)
 
         if logger is None:
@@ -346,7 +346,7 @@ You have been provided with these additional arguments, that you can access usin
 
     def _run(
         self, task: str, max_steps: int, images: List["PIL.Image.Image"] | None = None
-    ) -> Generator[ActionStep | FinalAnswerStep, None, None]:
+    ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep, None, None]:
         final_answer = None
         self.step_number = 1
         while final_answer is None and self.step_number <= max_steps:
@@ -1015,42 +1015,33 @@ class ToolCallingAgent(MultiStepAgent):
         memory_step.model_input_messages = memory_messages.copy()
 
         try:
-            if self.stream_outputs:
-                raise NotImplementedError("Stream outputs are not yet implemented for ToolCallingAgent")
-            else:
-                chat_message: ChatMessage = self.model.generate(
-                    self.input_messages,
-                    stop_sequences=["Observation:", "Calling tools:"],
-                    tools_to_call_from=list(self.tools.values()),
-                )
-                memory_step.model_output_message = chat_message
-                model_output = chat_message.content
-                self.logger.log_markdown(
-                    content=model_output if model_output else str(chat_message.raw),
-                    title="Output message of the LLM:",
-                    level=LogLevel.DEBUG,
-                )
+            chat_message: ChatMessage = self.model.generate(
+                self.input_messages,
+                stop_sequences=["Observation:", "Calling tools:"],
+                tools_to_call_from=list(self.tools.values()),
+            )
+            memory_step.model_output_message = chat_message
+            model_output = chat_message.content
+            self.logger.log_markdown(
+                content=model_output if model_output else str(chat_message.raw),
+                title="Output message of the LLM:",
+                level=LogLevel.DEBUG,
+            )
 
-                memory_step.model_output_message.content = model_output
-
+            memory_step.model_output_message.content = model_output
             memory_step.model_output = model_output
         except Exception as e:
-            raise AgentGenerationError(f"Error while generating or parsing output:\n{e}", self.logger) from e
+            raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
-            # First try parsing the output as a tool call
             try:
-                tool_call = self.model.parse_tool_calls(model_output)
-                tool_name, tool_call_id = tool_call.function.name, tool_call.id
-                tool_arguments = tool_call.function.arguments
-                memory_step.model_output = str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}")
-                memory_step.tool_calls = [ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call_id)]
-            except Exception:
-                raise AgentParsingError(
-                    "Model did not call any tools. Call `final_answer` tool to return a final answer.", self.logger
-                )
-
-        tool_call = chat_message.tool_calls[0]
+                chat_message = self.model.parse_tool_calls(chat_message)
+            except Exception as e:
+                raise AgentParsingError(f"Error while parsing tool call from model output: {e}", self.logger)
+        else:
+            for tool_call in chat_message.tool_calls:
+                tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
+        tool_call = chat_message.tool_calls[0]  # type: ignore
         tool_name, tool_call_id = tool_call.function.name, tool_call.id
         tool_arguments = tool_call.function.arguments
         memory_step.model_output = str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}")
@@ -1328,8 +1319,7 @@ class CodeAgent(MultiStepAgent):
 
             memory_step.model_output = model_output
         except Exception as e:
-            raise e
-        # AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
+            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
 
         # Parse
         try:
