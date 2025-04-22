@@ -138,6 +138,18 @@ def parse_json_if_needed(arguments: str | dict) -> str | dict:
             return arguments
 
 
+@dataclass
+class CompletionDelta:
+    content: str | None = None
+    tool_calls: List[ChatMessageToolCall] | None = None
+
+
+class CompletionUsage:
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
 class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
@@ -387,6 +399,9 @@ class Model:
         """
         raise NotImplementedError("This method must be implemented in child classes")
 
+    def generate_stream(self, *args, **kwargs) -> Generator[CompletionDelta, None, None]:
+        raise NotImplementedError("This method must be implemented in child classes")
+
     def __call__(self, *args, **kwargs):
         return self.generate(*args, **kwargs)
 
@@ -525,6 +540,9 @@ class VLLMModel(Model):
             **kwargs,
         )
         messages = completion_kwargs.pop("messages")
+        for message in messages:
+            if not isinstance(message["content"], str):
+                message["content"] = message["content"][0]["text"]
         prepared_stop_sequences = completion_kwargs.pop("stop", [])
         tools = completion_kwargs.pop("tools", None)
         completion_kwargs.pop("tool_choice", None)
@@ -552,6 +570,7 @@ class VLLMModel(Model):
         out = self.model.generate(
             prompt,
             sampling_params=sampling_params,
+            stream=True,
         )
         output_text = out[0].outputs[0].text
         self.last_input_token_count = len(out[0].prompt_token_ids)
@@ -1188,18 +1207,6 @@ class HfApiModel(InferenceClientModel):
             DeprecationWarning,
         )
         return super().__new__(cls)
-
-
-@dataclass
-class CompletionDelta:
-    content: str | None = None
-    tool_calls: List[ChatMessageToolCall] | None = None
-
-
-class CompletionUsage:
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
 
 
 class OpenAIServerModel(ApiModel):
