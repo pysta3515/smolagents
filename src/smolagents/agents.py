@@ -205,15 +205,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -252,9 +252,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -1188,9 +1188,8 @@ class CodeAgent(MultiStepAgent):
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
         executor_kwargs (`dict`, *optional*): Additional arguments to pass to initialize the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
-        stream_outputs (`bool`, *optional*, default `False`): Whether to stream outputs during execution.
+        stream_outputs (`bool`, *optional*, default `None`): Whether to stream outputs during execution. By default, will be set to `True` if the model has a `generate_stream` method.
         **kwargs: Additional keyword arguments.
-
     """
 
     def __init__(
@@ -1204,13 +1203,12 @@ class CodeAgent(MultiStepAgent):
         executor_type: str | None = "local",
         executor_kwargs: Optional[Dict[str, Any]] = None,
         max_print_outputs_length: Optional[int] = None,
-        stream_outputs: bool = False,
+        stream_outputs: bool | None = None,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        self.stream_outputs = stream_outputs
         prompt_templates = prompt_templates or yaml.safe_load(
             importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
         )
@@ -1221,6 +1219,11 @@ class CodeAgent(MultiStepAgent):
             grammar=grammar,
             planning_interval=planning_interval,
             **kwargs,
+        )
+        self.stream_outputs = (
+            stream_outputs
+            if stream_outputs is not None
+            else (hasattr(self.model, "generate_stream") and callable(self.model.generate_stream))
         )
         if "*" in self.additional_authorized_imports:
             self.logger.log(

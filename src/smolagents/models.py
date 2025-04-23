@@ -143,12 +143,6 @@ class CompletionDelta:
     tool_calls: List[ChatMessageToolCall] | None = None
 
 
-class CompletionUsage:
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
 class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
@@ -756,7 +750,7 @@ class TransformersModel(Model):
             )
             model_id = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 
-        default_max_tokens = 5000
+        default_max_tokens = 4096
         max_new_tokens = kwargs.get("max_new_tokens") or kwargs.get("max_tokens")
         if not max_new_tokens:
             kwargs["max_new_tokens"] = default_max_tokens
