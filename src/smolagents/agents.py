@@ -1020,7 +1020,7 @@ class ToolCallingAgent(MultiStepAgent):
         memory_step.model_input_messages = input_messages
 
         try:
-            chat_message: ChatMessage = self.model.generate(
+            chat_message: ChatMessage = self.model(
                 input_messages,
                 stop_sequences=["Observation:", "Calling tools:"],
                 tools_to_call_from=list(self.tools.values()),
