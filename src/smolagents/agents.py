@@ -497,7 +497,7 @@ You have been provided with these additional arguments, that you can access usin
     @abstractmethod
     def initialize_system_prompt(self) -> str:
         """To be implemented in child classes"""
-        raise NotImplementedError("initialize_system_prompt must be implemented in child classes")
+        ...
 
     def interrupt(self):
         """Interrupts the agent execution."""
