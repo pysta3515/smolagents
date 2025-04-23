@@ -66,6 +66,7 @@ from .utils import (
     AgentParsingError,
     AgentToolCallError,
     AgentToolExecutionError,
+    has_implemented_method,
     is_valid_name,
     make_init_file,
     parse_code_blobs,
@@ -1223,7 +1224,7 @@ class CodeAgent(MultiStepAgent):
         self.stream_outputs = (
             stream_outputs
             if stream_outputs is not None
-            else (hasattr(self.model, "generate_stream") and callable(self.model.generate_stream))
+            else has_implemented_method(self.model, Model, "generate_stream")
         )
         if "*" in self.additional_authorized_imports:
             self.logger.log(
