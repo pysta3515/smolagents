@@ -1151,8 +1151,8 @@ class LiteLLMRouterModel(LiteLLMModel):
         self,
         model_id: str,
         model_list: list[dict[str, Any]],
-        client_kwargs: Optional[dict[str, Any]] = None,
-        custom_role_conversions: Optional[Dict[str, str]] = None,
+        client_kwargs: dict[str, Any] | None = None,
+        custom_role_conversions: dict[str, str] | None = None,
         flatten_messages_as_text: bool | None = None,
         **kwargs,
     ):
