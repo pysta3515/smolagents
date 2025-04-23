@@ -1229,7 +1229,9 @@ class CodeAgent(MultiStepAgent):
         self.stream_outputs = stream_outputs
         can_stream = has_implemented_method(self.model, Model, "generate_stream")
         if self.stream_outputs and not can_stream:
-            raise ValueError("`stream_outputs` is set to True, but the model has no `generate_stream` method.")
+            raise ValueError(
+                "`stream_outputs` is set to True, but the model class implements no `generate_stream` method."
+            )
         if "*" in self.additional_authorized_imports:
             self.logger.log(
                 "Caution: you set an authorization for all imports, meaning your agent can decide to import any package it deems necessary. This might raise issues if the package is not installed in your environment.",
