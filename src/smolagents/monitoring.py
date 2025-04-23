@@ -20,7 +20,6 @@ from typing import List, Optional
 
 from rich import box
 from rich.console import Console, Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
@@ -85,28 +84,12 @@ YELLOW_HEX = "#d4b702"
 
 
 class AgentLogger:
-    def __init__(self, level: LogLevel = LogLevel.INFO, console: Console | None = None, live: bool = False):
+    def __init__(self, level: LogLevel = LogLevel.INFO, console: Console | None = None):
         self.level = level
         if console is None:
             self.console = Console()
         else:
             self.console = console
-        self.live = None
-        self._live_enabled = live
-        if live:
-            self.start_live()
-
-    def start_live(self) -> None:
-        """Start live streaming of logs."""
-        if self._live_enabled and self.live is None:
-            self.live = Live(console=self.console)
-            self.live.start()
-
-    def stop_live(self) -> None:
-        """Stop live streaming of logs."""
-        if self.live is not None:
-            self.live.stop()
-            self.live = None
 
     def log(self, *args, level: int | str | LogLevel = LogLevel.INFO, **kwargs) -> None:
         """Logs a message to the console.
@@ -117,10 +100,7 @@ class AgentLogger:
         if isinstance(level, str):
             level = LogLevel[level.upper()]
         if level <= self.level:
-            if self.live is not None:
-                self.live.update(Group(*args), refresh=True)
-            else:
-                self.console.print(*args, **kwargs)
+            self.console.print(*args, **kwargs)
 
     def log_error(self, error_message: str) -> None:
         self.log(escape_code_brackets(error_message), style="bold red", level=LogLevel.ERROR)
