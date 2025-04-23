@@ -1303,7 +1303,7 @@ class CodeAgent(MultiStepAgent):
                 memory_step.model_output_message = chat_message
                 model_output = chat_message.content
             else:
-                chat_message: ChatMessage = self.model.generate(
+                chat_message: ChatMessage = self.model(
                     input_messages,
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
