@@ -118,19 +118,19 @@ class TestModel:
         monkeypatch.setattr("huggingface_hub.constants.HF_HUB_DOWNLOAD_TIMEOUT", 30)  # instead of 10
         model = TransformersModel(
             model_id="HuggingFaceTB/SmolLM2-135M-Instruct",
-            max_new_tokens=4,
+            max_new_tokens=5,
             device_map="cpu",
             do_sample=False,
         )
         messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}]}]
         output = model.generate(messages, stop_sequences=["great"]).content
-        assert output == "assistant\nHell"
+        assert output == "assistant\nHello"
 
         output = model.generate_stream(messages, stop_sequences=["great"])
         output_str = ""
         for el in output:
             output_str += el.content
-        assert output_str == "assistant\nHell"
+        assert output_str == "assistant\nHello"
 
     def test_transformers_message_vl_no_tool(self, shared_datadir, monkeypatch):
         monkeypatch.setattr("huggingface_hub.constants.HF_HUB_DOWNLOAD_TIMEOUT", 30)  # instead of 10
@@ -265,7 +265,8 @@ class TestLiteLLMModel:
         assert error_flag in str(e)
         with pytest.raises(Exception) as e:
             # This should raise 401 error because of missing API key, not fail for any "bad format" reason
-            model.generate_stream(messages)
+            for el in model.generate_stream(messages):
+                assert el.content is not None
         assert error_flag in str(e)
 
     def test_passing_flatten_messages(self):
