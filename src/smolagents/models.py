@@ -323,13 +323,13 @@ class Model:
         3. Default values in self.kwargs
         """
         # Clean and standardize the message list
+        flatten_messages_as_text = kwargs.pop("flatten_messages_as_text", self.flatten_messages_as_text)
         messages = get_clean_message_list(
             messages,
             role_conversions=custom_role_conversions or tool_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,
-            flatten_messages_as_text=self.flatten_messages_as_text,
+            flatten_messages_as_text=flatten_messages_as_text,
         )
-
         # Use self.kwargs as the base configuration
         completion_kwargs = {
             **self.kwargs,
@@ -527,9 +527,6 @@ class VLLMModel(Model):
             **kwargs,
         )
         messages = completion_kwargs.pop("messages")
-        for message in messages:
-            if not isinstance(message["content"], str):
-                message["content"] = message["content"][0]["text"]
         prepared_stop_sequences = completion_kwargs.pop("stop", [])
         tools = completion_kwargs.pop("tools", None)
         completion_kwargs.pop("tool_choice", None)
