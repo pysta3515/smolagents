@@ -1224,7 +1224,8 @@ class CodeAgent(MultiStepAgent):
         self.stream_outputs = (
             stream_outputs
             if stream_outputs is not None
-            else has_implemented_method(self.model, Model, "generate_stream")
+            else hasattr(self.model, "generate_stream")
+            and has_implemented_method(self.model, Model, "generate_stream")
         )
         if "*" in self.additional_authorized_imports:
             self.logger.log(
