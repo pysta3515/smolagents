@@ -582,7 +582,6 @@ You have been provided with these additional arguments, that you can access usin
         ]
         try:
             chat_message: ChatMessage = self.model(messages)
-            assert chat_message.content
             return chat_message.content
         except Exception as e:
             return f"Error in generating final LLM output:\n{e}"
