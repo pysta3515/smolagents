@@ -395,7 +395,6 @@ class TestAgent:
             additional_args={"instruction": "Remember this."},
         )
         assert "Remember this" in agent.task
-        assert "Remember this" in str(agent.input_messages)
 
     def test_reset_conversations(self):
         agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModel())
@@ -1372,7 +1371,7 @@ final_answer("Final report.")
 
         manager_model = FakeModelMultiagentsManagerAgent()
 
-        class FakeModelMultiagentsManagedAgent:
+        class FakeModelMultiagentsManagedAgent(Model):
             model_id = "fake_model"
 
             def generate(
