@@ -457,6 +457,6 @@ def is_valid_name(name: str) -> bool:
 
 
 def has_implemented_method(instance, parent_class, method_name: str) -> bool:
-    instance_method = getattr(instance.__class__, method_name)
-    parent_method = getattr(parent_class, method_name)
+    instance_method = getattr(instance.__class__, method_name, None)
+    parent_method = getattr(parent_class, method_name, None)
     return instance_method is not parent_method
