@@ -469,15 +469,12 @@ class VLLMModel(Model):
             This can be a path or model identifier from the Hugging Face model hub.
         model_kwargs (`dict[str, Any]`, *optional*):
             Additional keyword arguments to pass to the vLLM model (like revision, max_model_len, etc.).
-        streaming (`bool`, *optional*):
-            Whether to stream the output tokens. Defaults to False.
     """
 
     def __init__(
         self,
         model_id,
         model_kwargs: dict[str, Any] | None = None,
-        streaming: bool = False,
         **kwargs,
     ):
         if not _is_package_available("vllm"):
@@ -486,17 +483,13 @@ class VLLMModel(Model):
         from vllm import LLM  # type: ignore
         from vllm.transformers_utils.tokenizer import get_tokenizer  # type: ignore
 
-        self.model_kwargs = {
-            **(model_kwargs or {}),
-            "model_id": model_id,
-        }
+        self.model_kwargs = model_kwargs or {}
         super().__init__(**kwargs)
         self.model_id = model_id
-        self.model = LLM(**self.model_kwargs)
+        self.model = LLM(model=model_id, **self.model_kwargs)
         assert self.model is not None
         self.tokenizer = get_tokenizer(model_id)
         self._is_vlm = False  # VLLMModel does not support vision models yet.
-        self.streaming = streaming
 
     def cleanup(self):
         import gc
@@ -564,7 +557,6 @@ class VLLMModel(Model):
         out = self.model.generate(
             prompt,
             sampling_params=sampling_params,
-            stream=True,
         )
         output_text = out[0].outputs[0].text
         self.last_input_token_count = len(out[0].prompt_token_ids)
