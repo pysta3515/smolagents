@@ -39,8 +39,6 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-from smolagents.models import CompletionDelta, parse_json_if_needed
-
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -48,8 +46,17 @@ if TYPE_CHECKING:
 from .agent_types import AgentAudio, AgentImage, handle_agent_output_types
 from .default_tools import TOOL_MAPPING, FinalAnswerTool
 from .local_python_executor import BASE_BUILTIN_MODULES, LocalPythonExecutor, PythonExecutor, fix_final_answer_code
-from .memory import ActionStep, AgentMemory, FinalAnswerStep, PlanningStep, SystemPromptStep, TaskStep, ToolCall
-from .models import ChatMessage, MessageRole, Model
+from .memory import (
+    ActionStep,
+    AgentMemory,
+    FinalAnswerStep,
+    Message,
+    PlanningStep,
+    SystemPromptStep,
+    TaskStep,
+    ToolCall,
+)
+from .models import ChatMessage, CompletionDelta, MessageRole, Model, parse_json_if_needed
 from .monitoring import (
     YELLOW_HEX,
     AgentLogger,
@@ -66,7 +73,6 @@ from .utils import (
     AgentParsingError,
     AgentToolCallError,
     AgentToolExecutionError,
-    has_implemented_method,
     is_valid_name,
     make_init_file,
     parse_code_blobs,
@@ -206,15 +212,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -231,7 +237,7 @@ class MultiStepAgent(ABC):
         self._validate_tools_and_managed_agents(tools, managed_agents)
 
         self.system_prompt = self.initialize_system_prompt()
-        self.input_messages = None
+        input_messages = None
         self.task: str | None = None
         self.memory = AgentMemory(self.system_prompt)
 
@@ -253,9 +259,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -506,7 +512,7 @@ You have been provided with these additional arguments, that you can access usin
     def write_memory_to_messages(
         self,
         summary_mode: Optional[bool] = False,
-    ) -> List[Dict[str, str]]:
+    ) -> List[Message]:
         """
         Reads past llm_outputs, actions, and observations or errors from the memory into a series of messages
         that can be used as input to the LLM. Adds a number of keywords (such as PLAN, error, etc) to help
@@ -1009,14 +1015,14 @@ class ToolCallingAgent(MultiStepAgent):
         """
         memory_messages = self.write_memory_to_messages()
 
-        self.input_messages = memory_messages
+        input_messages = memory_messages.copy()
 
         # Add new step in logs
-        memory_step.model_input_messages = memory_messages.copy()
+        memory_step.model_input_messages = input_messages
 
         try:
             chat_message: ChatMessage = self.model.generate(
-                self.input_messages,
+                input_messages,
                 stop_sequences=["Observation:", "Calling tools:"],
                 tools_to_call_from=list(self.tools.values()),
             )
@@ -1188,7 +1194,7 @@ class CodeAgent(MultiStepAgent):
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
         executor_kwargs (`dict`, *optional*): Additional arguments to pass to initialize the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
-        stream_outputs (`bool`, *optional*, default `None`): Whether to stream outputs during execution. By default, will be set to `True` if the model has a `generate_stream` method.
+        stream_outputs (`bool`, *optional*, default `False`): Whether to stream outputs during execution.
         **kwargs: Additional keyword arguments.
     """
 
@@ -1203,7 +1209,7 @@ class CodeAgent(MultiStepAgent):
         executor_type: str | None = "local",
         executor_kwargs: Optional[Dict[str, Any]] = None,
         max_print_outputs_length: Optional[int] = None,
-        stream_outputs: bool | None = None,
+        stream_outputs: bool = False,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
@@ -1220,16 +1226,14 @@ class CodeAgent(MultiStepAgent):
             planning_interval=planning_interval,
             **kwargs,
         )
-        self.stream_outputs = (
-            stream_outputs
-            if stream_outputs is not None
-            else hasattr(self.model, "generate_stream")
-            and has_implemented_method(self.model, Model, "generate_stream")
-        )
+        self.stream_outputs = stream_outputs
+        can_stream = hasattr(self.model, "generate_stream")
+        if not can_stream and self.stream_outputs:
+            raise ValueError("`stream_outputs` is set to True, but the model has no `generate_stream` method.")
         if "*" in self.additional_authorized_imports:
             self.logger.log(
                 "Caution: you set an authorization for all imports, meaning your agent can decide to import any package it deems necessary. This might raise issues if the package is not installed in your environment.",
-                0,
+                level=LogLevel.INFO,
             )
         self.executor_type = executor_type or "local"
         self.executor_kwargs = executor_kwargs or {}
@@ -1274,21 +1278,20 @@ class CodeAgent(MultiStepAgent):
         """
         memory_messages = self.write_memory_to_messages()
 
-        self.input_messages = memory_messages.copy()
-        # Add new step in logs
-        memory_step.model_input_messages = memory_messages.copy()
+        input_messages = memory_messages.copy()
+        ### Generate model output ###
+        memory_step.model_input_messages = input_messages
         try:
             additional_args = {"grammar": self.grammar} if self.grammar is not None else {}
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
-                    self.input_messages,
+                    input_messages,
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
                 )
                 output_text = ""
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
-                        memory_step.model_output_message = event
                         if isinstance(event, CompletionDelta):
                             if event.content is not None:
                                 output_text += event.content
@@ -1302,7 +1305,7 @@ class CodeAgent(MultiStepAgent):
                 model_output = chat_message.content
             else:
                 chat_message: ChatMessage = self.model.generate(
-                    self.input_messages,
+                    input_messages,
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
                 )
@@ -1324,7 +1327,7 @@ class CodeAgent(MultiStepAgent):
         except Exception as e:
             raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
 
-        # Parse
+        ### Parse output ###
         try:
             code_action = fix_final_answer_code(parse_code_blobs(model_output))
         except Exception as e:
@@ -1339,7 +1342,7 @@ class CodeAgent(MultiStepAgent):
             )
         ]
 
-        # Execute
+        ### Execute action ###
         self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
         is_final_answer = False
         try:
