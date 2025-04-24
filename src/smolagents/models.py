@@ -1062,7 +1062,7 @@ class LiteLLMModel(ApiModel):
         for event in self.client.completion(**completion_kwargs, stream=True, stream_options={"include_usage": True}):
             if event.choices:
                 if event.choices[0].delta is None:
-                    if not event.choices[0].finish_reason == "stop":
+                    if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
                     yield CompletionDelta(
@@ -1300,7 +1300,7 @@ class InferenceClientModel(ApiModel):
         ):
             if event.choices:
                 if event.choices[0].delta is None:
-                    if not event.choices[0].finish_reason == "stop":
+                    if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
                     yield CompletionDelta(
@@ -1406,7 +1406,7 @@ class OpenAIServerModel(ApiModel):
         ):
             if event.choices:
                 if event.choices[0].delta is None:
-                    if not event.choices[0].finish_reason == "stop":
+                    if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
                     yield CompletionDelta(
