@@ -212,15 +212,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -258,9 +258,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -346,11 +346,11 @@ You have been provided with these additional arguments, that you can access usin
 
         if stream:
             # The steps are returned as they are executed through a generator to iterate on.
-            return self._run(task=self.task, max_steps=max_steps, images=images)
+            return self._run_stream(task=self.task, max_steps=max_steps, images=images)
         # Outputs are returned only at the end. We only look at the last step.
-        return deque(self._run(task=self.task, max_steps=max_steps, images=images), maxlen=1)[0].final_answer
+        return deque(self._run_stream(task=self.task, max_steps=max_steps, images=images), maxlen=1)[0].final_answer
 
-    def _run(
+    def _run_stream(
         self, task: str, max_steps: int, images: List["PIL.Image.Image"] | None = None
     ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep, None, None]:
         final_answer = None
@@ -371,7 +371,13 @@ You have been provided with these additional arguments, that you can access usin
                 step_number=self.step_number, start_time=step_start_time, observations_images=images
             )
             try:
-                final_answer = self._execute_step(task, action_step)
+                if hasattr(self, "stream_outputs") and self.stream_outputs:
+                    final_answer = None
+                    for el in self._execute_step_stream(action_step):
+                        final_answer = el
+                        yield el
+                else:
+                    final_answer = self._execute_step(action_step)
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
@@ -389,12 +395,23 @@ You have been provided with these additional arguments, that you can access usin
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
-    def _execute_step(self, task: str, memory_step: ActionStep) -> Union[None, Any]:
+    def _execute_step(self, memory_step: ActionStep) -> Union[None, Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-        final_answer = self.step(memory_step)
+        final_answer = None
+        for el in self.step(memory_step):
+            final_answer = el
         if final_answer is not None and self.final_answer_checks:
             self._validate_final_answer(final_answer)
         return final_answer
+
+    def _execute_step_stream(self, memory_step: ActionStep) -> Generator[Any, None, None]:
+        final_answer = None
+        for el in self.step(memory_step):
+            final_answer = el
+            yield el
+        if final_answer is not None and self.final_answer_checks:
+            self._validate_final_answer(final_answer)
+        yield final_answer
 
     def _validate_final_answer(self, final_answer: Any):
         for check_function in self.final_answer_checks:
@@ -592,7 +609,7 @@ You have been provided with these additional arguments, that you can access usin
             return f"Error in generating final LLM output:\n{e}"
 
     @abstractmethod
-    def step(self, memory_step: ActionStep) -> Union[None, Any]:
+    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
         """To be implemented in children classes. Should return either None if the step is not final."""
         pass
 
@@ -1271,7 +1288,7 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def step(self, memory_step: ActionStep) -> Union[None, Any]:
+    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns None if the step is not final.
@@ -1298,6 +1315,7 @@ class CodeAgent(MultiStepAgent):
                                 live.update(Markdown(output_text))
                         elif isinstance(event, ToolCall):
                             memory_step.tool_calls = [event]
+                        yield event
 
                 model_output = output_text
                 chat_message = ChatMessage(role="assistant", content=model_output)
@@ -1384,7 +1402,7 @@ class CodeAgent(MultiStepAgent):
         ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
-        return output if is_final_answer else None
+        yield output if is_final_answer else None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.
