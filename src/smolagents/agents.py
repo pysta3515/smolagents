@@ -212,15 +212,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert (
-                not missing_keys
-            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert (
-                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
-                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
+                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        )
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -258,9 +258,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(
-                agent.name and agent.description for agent in managed_agents
-            ), "All managed agents need both a name and a description!"
+            assert all(agent.name and agent.description for agent in managed_agents), (
+                "All managed agents need both a name and a description!"
+            )
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -371,13 +371,9 @@ You have been provided with these additional arguments, that you can access usin
                 step_number=self.step_number, start_time=step_start_time, observations_images=images
             )
             try:
-                if hasattr(self, "stream_outputs") and self.stream_outputs:
-                    final_answer = None
-                    for el in self._execute_step_stream(action_step):
-                        final_answer = el
-                        yield el
-                else:
-                    final_answer = self._execute_step(action_step)
+                for el in self._execute_step(action_step):
+                    yield el
+                final_answer = el
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
@@ -395,16 +391,8 @@ You have been provided with these additional arguments, that you can access usin
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
-    def _execute_step(self, memory_step: ActionStep) -> Union[None, Any]:
+    def _execute_step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-        final_answer = None
-        for el in self.step(memory_step):
-            final_answer = el
-        if final_answer is not None and self.final_answer_checks:
-            self._validate_final_answer(final_answer)
-        return final_answer
-
-    def _execute_step_stream(self, memory_step: ActionStep) -> Generator[Any, None, None]:
         final_answer = None
         for el in self.step(memory_step):
             final_answer = el
