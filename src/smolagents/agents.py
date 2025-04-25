@@ -599,8 +599,8 @@ You have been provided with these additional arguments, that you can access usin
 
     @abstractmethod
     def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
-        """To be implemented in children classes. Should return either None if the step is not final."""
-        pass
+        """To be implemented in children classes. Should yield either None if the step is not final, or the final answer."""
+        yield None
 
     def replay(self, detailed: bool = False):
         """Prints a pretty replay of the agent's steps.
