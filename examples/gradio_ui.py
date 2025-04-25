@@ -20,6 +20,7 @@ agent = CodeAgent(
     name="example_agent",
     description="This is an example agent that has not tool but will always see an agent at the end of its step.",
     step_callbacks=[add_agent_image],
+    stream_outputs=True,
 )
 
 GradioUI(agent, file_upload_folder="./data").launch()
