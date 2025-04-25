@@ -39,9 +39,7 @@ def get_step_footnote_content(step_log: MemoryStep, step_name: str) -> str:
     return step_footnote_content
 
 
-def pull_messages_from_step(
-    step_log: MemoryStep,
-):
+def pull_messages_from_step(step_log: MemoryStep, skip_model_outputs: bool = False):
     """Extract ChatMessage objects from agent steps with proper nesting"""
     if not _is_package_available("gradio"):
         raise ModuleNotFoundError(
@@ -52,10 +50,11 @@ def pull_messages_from_step(
     if isinstance(step_log, ActionStep):
         # Output the step number
         step_number = f"Step {step_log.step_number}" if step_log.step_number is not None else "Step"
-        # yield gr.ChatMessage(role="assistant", content=f"**{step_number}**", metadata={"status": "done"})
+        if not skip_model_outputs:
+            yield gr.ChatMessage(role="assistant", content=f"**{step_number}**", metadata={"status": "done"})
 
         # First yield the thought/reasoning from the LLM
-        if hasattr(step_log, "model_output") and step_log.model_output is not None:
+        if not skip_model_outputs and hasattr(step_log, "model_output") and step_log.model_output is not None:
             # Clean up the LLM output
             model_output = step_log.model_output.strip()
             # Remove any trailing <end_code> and extra backticks, handling multiple possible formats
@@ -208,6 +207,7 @@ def stream_to_gradio(
             intermediate_text = ""
             for message in pull_messages_from_step(
                 step_log,
+                skip_model_outputs=agent.stream_outputs,  # If we're streaming model outputs, no need to display them twice
             ):
                 yield message
         elif isinstance(step_log, CompletionDelta):

@@ -209,6 +209,7 @@ class MultiStepAgent(ABC):
     ):
         self.agent_name = self.__class__.__name__
         self.model = model
+        self.stream_outputs = False
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
@@ -1012,7 +1013,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def step(self, memory_step: ActionStep) -> Union[None, Any]:
+    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns None if the step is not final.
@@ -1086,7 +1087,7 @@ class ToolCallingAgent(MultiStepAgent):
                 )
 
             memory_step.action_output = final_answer
-            return final_answer
+            yield final_answer
         else:
             if tool_arguments is None:
                 tool_arguments = {}
@@ -1108,7 +1109,7 @@ class ToolCallingAgent(MultiStepAgent):
                 level=LogLevel.INFO,
             )
             memory_step.observations = updated_information
-            return None
+            yield None
 
     def _substitute_state_variables(self, arguments: Union[Dict[str, str], str]) -> Union[Dict[str, Any], str]:
         """Replace string values in arguments with their corresponding state values if they exist."""
