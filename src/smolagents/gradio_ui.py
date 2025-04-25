@@ -206,7 +206,8 @@ def stream_to_gradio(
             intermediate_text = ""
             for message in pull_messages_from_step(
                 step_log,
-                skip_model_outputs=agent.stream_outputs,  # If we're streaming model outputs, no need to display them twice
+                # If we're streaming model outputs, no need to display them twice
+                skip_model_outputs=getattr(agent, "stream_outputs", False),
             ):
                 yield message
         elif isinstance(step_log, CompletionDelta):
