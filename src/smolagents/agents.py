@@ -210,7 +210,6 @@ class MultiStepAgent(ABC):
     ):
         self.agent_name = self.__class__.__name__
         self.model = model
-        self.stream_outputs = False
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
