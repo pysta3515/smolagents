@@ -17,9 +17,9 @@ import os
 import tempfile
 import unittest
 import uuid
+from collections.abc import Generator
 from contextlib import nullcontext as does_not_raise
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -620,7 +620,7 @@ class MockAgent:
 
 
 class DummyMultiStepAgent(MultiStepAgent):
-    def step(self, memory_step: ActionStep) -> Generator[None, None, None]:
+    def step(self, memory_step: ActionStep) -> Generator[None]:
         yield None
 
     def initialize_system_prompt(self):

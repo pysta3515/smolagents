@@ -393,7 +393,7 @@ You have been provided with these additional arguments, that you can access usin
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
-    def _execute_step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
+    def _execute_step(self, memory_step: ActionStep) -> Generator[Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
         final_answer = None
         for el in self.step(memory_step):
@@ -599,7 +599,7 @@ You have been provided with these additional arguments, that you can access usin
             return f"Error in generating final LLM output:\n{e}"
 
     @abstractmethod
-    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
+    def step(self, memory_step: ActionStep) -> Generator[Any]:
         """To be implemented in children classes. Should yield either None if the step is not final, or the final answer."""
         yield None
 
@@ -1014,7 +1014,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
+    def step(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns None if the step is not final.
@@ -1278,7 +1278,7 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def step(self, memory_step: ActionStep) -> Generator[Any, None, None]:
+    def step(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns None if the step is not final.
