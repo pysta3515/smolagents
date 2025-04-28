@@ -1194,7 +1194,7 @@ class InferenceClientModel(ApiModel):
             Token to use for authentication. This is a duplicated argument from `token` to make [`InferenceClientModel`]
             follow the same pattern as `openai.OpenAI` client. Cannot be used if `token` is set. Defaults to None.
         bill_to (`str`, *optional*):
-            The billing account to use for the requests. By default the requests are billed on the user’s account. Requests can only be billed to 
+            The billing account to use for the requests. By default the requests are billed on the user’s account. Requests can only be billed to
             an organization the user is a member of, and which has subscribed to Enterprise Hub.
         **kwargs:
             Additional keyword arguments to pass to the Hugging Face API.
