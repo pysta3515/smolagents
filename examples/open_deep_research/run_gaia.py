@@ -136,7 +136,12 @@ def load_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
                 ignore_patterns=[".gitattributes", "README.md"],
             )
         else:
-            raise NotImplementedError("Raw dataset not available! Please set --use-raw-dataset to True.")
+            snapshot_download(
+                repo_id="smolagents/GAIA-annotated",
+                repo_type="dataset",
+                local_dir="data/gaia",
+                ignore_patterns=[".gitattributes", "README.md"],
+            )
 
     def preprocess_file_paths(
         row,
