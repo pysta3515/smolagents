@@ -1,4 +1,4 @@
-# EXAMPLE COMMAND: python examples/open_deep_research/run_gaia.py --concurrency 32 --run-name generate-traces-03-apr-noplanning --model-id gpt-4o
+# EXAMPLE COMMAND: from folder examples/open_deep_research, run: python run_gaia.py --concurrency 32 --run-name generate-traces-03-apr-noplanning --model-id gpt-4o
 import argparse
 import json
 import os
@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument("--run-name", type=str, required=True)
     parser.add_argument("--set", type=str, default="validation")
     parser.add_argument("--use-open-models", type=bool, default=False)
-    parser.add_argument("--use-raw-dataset", type=bool, default=False)
+    parser.add_argument("--use-raw-dataset", action="store_true")
     return parser.parse_args()
 
 
@@ -126,6 +126,12 @@ def create_agent_team(model: Model):
     return manager_agent
 
 
+def preprocess_file_paths(row):
+    if len(row["file_name"]) > 0:
+        row["file_name"] = f"data/gaia/{set}/" + row["file_name"]
+    return row
+
+
 def load_dataset(use_raw_dataset: bool, set: str) -> datasets.Dataset:
     if not os.path.exists("data/gaia"):
         if use_raw_dataset:
@@ -138,8 +144,9 @@ def load_dataset(use_raw_dataset: bool, set: str) -> datasets.Dataset:
         else:
             raise NotImplementedError("Raw dataset not available! Please set --use-raw-dataset to True.")
 
-    eval_ds = datasets.load_dataset("data/gaia/GAIA.py", "2023_all", split=set)
+    eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all", split=set)
     eval_ds = eval_ds.rename_columns({"Question": "question", "Final answer": "true_answer", "Level": "task"})
+    eval_ds = eval_ds.map(preprocess_file_paths)
     return eval_ds
 
 
@@ -171,21 +178,22 @@ def answer_single_question(
     agent = create_agent_team(model)
 
     augmented_question = """You have one question to answer. It is paramount that you provide a correct answer.
-Give it all you can: I know for a fact that you have access to all the relevant tools to solve it and find the correct answer (the answer does exist). Failure or 'I cannot answer' or 'None found' will not be tolerated, success will be rewarded.
-Run verification steps if that's needed, you must make sure you find the correct answer!
-Here is the task:
+Give it all you can: I know for a fact that you have access to all the relevant tools to solve it and find the correct answer (the answer does exist).
+Failure or 'I cannot answer' or 'None found' will not be tolerated, success will be rewarded.
+Run verification steps if that's needed, you must make sure you find the correct answer! Here is the task:
+
 """ + example["question"]
 
-    if example["file_path"]:
-        if ".zip" in example["file_path"]:
+    if example["file_name"]:
+        if ".zip" in example["file_name"]:
             prompt_use_files = "\n\nTo solve the task above, you will have to use these attached files:\n"
             prompt_use_files += get_zip_description(
-                example["file_path"], example["question"], visual_inspection_tool, document_inspection_tool
+                example["file_name"], example["question"], visual_inspection_tool, document_inspection_tool
             )
         else:
-            prompt_use_files = "\n\nTo solve the task above, you will have to use this attached file:"
+            prompt_use_files = "\n\nTo solve the task above, you will have to use this attached file:\n"
             prompt_use_files += get_single_file_description(
-                example["file_path"], example["question"], visual_inspection_tool, document_inspection_tool
+                example["file_name"], example["question"], visual_inspection_tool, document_inspection_tool
             )
         augmented_question += prompt_use_files
 
@@ -253,7 +261,8 @@ def get_examples_to_answer(answers_file: str, eval_ds: datasets.Dataset) -> list
         print("Error when loading records: ", e)
         print("No usable records! ▶️ Starting new.")
         done_questions = []
-    return [line for line in eval_ds.to_list() if line["question"] not in done_questions]
+    print("FILEPATH", eval_ds.to_list()[0]["file_path"])
+    return [line for line in eval_ds.to_list() if line["question"] not in done_questions and line["file_path"]]
 
 
 def main():
