@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import datasets
 import pandas as pd
@@ -49,34 +50,18 @@ def parse_args():
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--model-id", type=str, default="o1")
     parser.add_argument("--run-name", type=str, required=True)
+    parser.add_argument("--set", type=str, default="validation")
+    parser.add_argument("--use-open-models", type=bool, default=False)
+    parser.add_argument("--use-raw-dataset", type=bool, default=False)
     return parser.parse_args()
 
 
 ### IMPORTANT: EVALUATION SWITCHES
 
-print("Make sure you deactivated Tailscale VPN, else some URLs will be blocked!")
-
-USE_OPEN_MODELS = False
-
-SET = "validation"
+print("Make sure you deactivated any VPN like Tailscale, else some URLs will be blocked!")
 
 custom_role_conversions = {"tool-call": "assistant", "tool-response": "user"}
 
-### LOAD EVALUATION DATASET
-
-if not os.path.exists("data/gaia"):
-    snapshot_download(
-        repo_id="gaia-benchmark/GAIA",
-        repo_type="dataset",
-        local_dir="data/gaia",
-        ignore_patterns=[".gitattributes", "README.md"],
-    )
-eval_ds = datasets.load_dataset("data/gaia/GAIA.py", "2023_all")[SET]
-eval_ds = eval_ds.rename_columns({"Question": "question", "Final answer": "true_answer", "Level": "task"})
-
-eval_df = pd.DataFrame(eval_ds)
-print("Loaded evaluation dataset:")
-print(eval_df["task"].value_counts())
 
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
 
@@ -141,17 +126,36 @@ def create_agent_team(model: Model):
     return manager_agent
 
 
+def load_dataset(use_raw_dataset: bool, set: str) -> datasets.Dataset:
+    if not os.path.exists("data/gaia"):
+        if use_raw_dataset:
+            snapshot_download(
+                repo_id="gaia-benchmark/GAIA",
+                repo_type="dataset",
+                local_dir="data/gaia",
+                ignore_patterns=[".gitattributes", "README.md"],
+            )
+        else:
+            raise NotImplementedError("Raw dataset not available! Please set --use-raw-dataset to True.")
+
+    eval_ds = datasets.load_dataset("data/gaia/GAIA.py", "2023_all", split=set)
+    eval_ds = eval_ds.rename_columns({"Question": "question", "Final answer": "true_answer", "Level": "task"})
+    return eval_ds
+
+
 def append_answer(entry: dict, jsonl_file: str) -> None:
-    jsonl_file = Path(jsonl_file)
-    jsonl_file.parent.mkdir(parents=True, exist_ok=True)
+    jsonl_path = Path(jsonl_file)
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
     with append_answer_lock, open(jsonl_file, "a", encoding="utf-8") as fp:
         fp.write(json.dumps(entry) + "\n")
-    assert os.path.exists(jsonl_file), "File not found!"
-    print("Answer exported to file:", jsonl_file.resolve())
+    assert jsonl_path.exists(), "File not found!"
+    print("Answer exported to file:", jsonl_path.resolve())
 
 
-def answer_single_question(example, model_id, answers_file, visual_inspection_tool):
-    model_params = {
+def answer_single_question(
+    example: dict, model_id: str, answers_file: str, visual_inspection_tool: TextInspectorTool
+) -> None:
+    model_params: dict[str, Any] = {
         "model_id": model_id,
         "custom_role_conversions": custom_role_conversions,
     }
@@ -240,7 +244,7 @@ Here is the task:
     append_answer(annotated_example, answers_file)
 
 
-def get_examples_to_answer(answers_file, eval_ds) -> list[dict]:
+def get_examples_to_answer(answers_file: str, eval_ds: datasets.Dataset) -> list[dict]:
     print(f"Loading answers from {answers_file}...")
     try:
         done_questions = pd.read_json(answers_file, lines=True)["question"].tolist()
@@ -256,7 +260,11 @@ def main():
     args = parse_args()
     print(f"Starting run with arguments: {args}")
 
-    answers_file = f"output/{SET}/{args.run_name}.jsonl"
+    eval_ds = load_dataset(args.use_raw_dataset, args.set)
+    print("Loaded evaluation dataset:")
+    print(pd.DataFrame(eval_ds)["task"].value_counts())
+
+    answers_file = f"output/{args.set}/{args.run_name}.jsonl"
     tasks_to_run = get_examples_to_answer(answers_file, eval_ds)
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as exe:
