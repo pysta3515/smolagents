@@ -1,26 +1,22 @@
 from openinference.instrumentation.smolagents import SmolagentsInstrumentor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from phoenix.otel import register
+
+
+register()
+SmolagentsInstrumentor().instrument(skip_dep_check=True)
+
 
 from smolagents import (
     CodeAgent,
     DuckDuckGoSearchTool,
-    HfApiModel,
+    InferenceClientModel,
     ToolCallingAgent,
     VisitWebpageTool,
 )
 
 
-# Let's setup the instrumentation first
-
-trace_provider = TracerProvider()
-trace_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter("http://0.0.0.0:6006/v1/traces")))
-
-SmolagentsInstrumentor().instrument(tracer_provider=trace_provider, skip_dep_check=True)
-
 # Then we run the agentic part!
-model = HfApiModel()
+model = InferenceClientModel()
 
 search_agent = ToolCallingAgent(
     tools=[DuckDuckGoSearchTool(), VisitWebpageTool()],
