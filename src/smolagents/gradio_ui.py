@@ -39,7 +39,13 @@ def get_step_footnote_content(step_log: MemoryStep, step_name: str) -> str:
 
 
 def pull_messages_from_step(step_log: MemoryStep, skip_model_outputs: bool = False):
-    """Extract ChatMessage objects from agent steps with proper nesting"""
+    """Extract ChatMessage objects from agent steps with proper nesting.
+
+    Args:
+        step_log: The step log to display as gr.ChatMessage objects.
+        skip_model_outputs: If True, skip the model outputs when creating the gr.ChatMessage objects:
+            This is used for instance when streaming model outputs have already been displayed.
+    """
     if not _is_package_available("gradio"):
         raise ModuleNotFoundError(
             "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
@@ -49,12 +55,11 @@ def pull_messages_from_step(step_log: MemoryStep, skip_model_outputs: bool = Fal
     if isinstance(step_log, ActionStep):
         # Output the step number
         step_number = f"Step {step_log.step_number}" if step_log.step_number is not None else "Step"
-        if not skip_model_outputs:
-            yield gr.ChatMessage(role="assistant", content=f"**{step_number}**", metadata={"status": "done"})
 
         # First yield the thought/reasoning from the LLM
-        if not skip_model_outputs and hasattr(step_log, "model_output") and step_log.model_output is not None:
-            # Clean up the LLM output
+        if not skip_model_outputs:
+            yield gr.ChatMessage(role="assistant", content=f"**{step_number}**", metadata={"status": "done"})
+        elif skip_model_outputs and hasattr(step_log, "model_output") and step_log.model_output is not None:
             model_output = step_log.model_output.strip()
             # Remove any trailing <end_code> and extra backticks, handling multiple possible formats
             model_output = re.sub(r"```\s*<end_code>", "```", model_output)  # handles ```<end_code>
