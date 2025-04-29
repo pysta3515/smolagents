@@ -21,7 +21,7 @@ from pathlib import Path
 from smolagents.agent_types import AgentAudio, AgentImage, AgentText
 from smolagents.agents import MultiStepAgent, PlanningStep
 from smolagents.memory import ActionStep, FinalAnswerStep, MemoryStep
-from smolagents.models import CompletionDelta
+from smolagents.models import ChatMessageStreamDelta
 from smolagents.utils import _is_package_available
 
 
@@ -215,7 +215,7 @@ def stream_to_gradio(
                 skip_model_outputs=getattr(agent, "stream_outputs", False),
             ):
                 yield message
-        elif isinstance(step_log, CompletionDelta):
+        elif isinstance(step_log, ChatMessageStreamDelta):
             intermediate_text += step_log.content or ""
             yield intermediate_text
 
@@ -259,7 +259,6 @@ class GradioUI:
                                 gr.ChatMessage(role="assistant", content=msg, metadata={"status": "pending"})
                             )
                     except Exception as e:
-                        print("MESSAGES", messages, msg, e)
                         raise e
                 yield messages
 

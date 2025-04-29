@@ -56,7 +56,7 @@ from .memory import (
     TaskStep,
     ToolCall,
 )
-from .models import ChatMessage, CompletionDelta, MessageRole, Model, parse_json_if_needed
+from .models import ChatMessage, ChatMessageStreamDelta, MessageRole, Model, parse_json_if_needed
 from .monitoring import (
     YELLOW_HEX,
     AgentLogger,
@@ -434,7 +434,7 @@ You have been provided with these additional arguments, that you can access usin
 
     def _generate_planning_step(
         self, task, is_first_step: bool, step: int
-    ) -> Generator[CompletionDelta | PlanningStep]:
+    ) -> Generator[ChatMessageStreamDelta | PlanningStep]:
         if is_first_step:
             input_messages = [
                 {
@@ -1331,7 +1331,7 @@ class CodeAgent(MultiStepAgent):
                 memory_step.model_output_message = chat_message
                 model_output = chat_message.content
             else:
-                chat_message: ChatMessage = self.model(
+                chat_message: ChatMessage = self.model.generate(
                     input_messages,
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
