@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--model-id", type=str, default="o1")
     parser.add_argument("--run-name", type=str, required=True)
-    parser.add_argument("--set", type=str, default="validation")
+    parser.add_argument("--set-to-run", type=str, default="validation")
     parser.add_argument("--use-open-models", type=bool, default=False)
     parser.add_argument("--use-raw-dataset", action="store_true")
     return parser.parse_args()
@@ -126,13 +126,7 @@ def create_agent_team(model: Model):
     return manager_agent
 
 
-def preprocess_file_paths(row):
-    if len(row["file_name"]) > 0:
-        row["file_name"] = f"data/gaia/{set}/" + row["file_name"]
-    return row
-
-
-def load_dataset(use_raw_dataset: bool, set: str) -> datasets.Dataset:
+def load_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
     if not os.path.exists("data/gaia"):
         if use_raw_dataset:
             snapshot_download(
@@ -144,7 +138,14 @@ def load_dataset(use_raw_dataset: bool, set: str) -> datasets.Dataset:
         else:
             raise NotImplementedError("Raw dataset not available! Please set --use-raw-dataset to True.")
 
-    eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all", split=set)
+    def preprocess_file_paths(
+        row,
+    ):
+        if len(row["file_name"]) > 0:
+            row["file_name"] = f"data/gaia/{set_to_run}/" + row["file_name"]
+        return row
+
+    eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all", split=set_to_run)
     eval_ds = eval_ds.rename_columns({"Question": "question", "Final answer": "true_answer", "Level": "task"})
     eval_ds = eval_ds.map(preprocess_file_paths)
     return eval_ds
@@ -262,18 +263,18 @@ def get_examples_to_answer(answers_file: str, eval_ds: datasets.Dataset) -> list
         print("No usable records! ▶️ Starting new.")
         done_questions = []
     print("FILEPATH", eval_ds.to_list()[0]["file_path"])
-    return [line for line in eval_ds.to_list() if line["question"] not in done_questions and line["file_path"]]
+    return [line for line in eval_ds.to_list() if line["question"] not in done_questions]
 
 
 def main():
     args = parse_args()
     print(f"Starting run with arguments: {args}")
 
-    eval_ds = load_dataset(args.use_raw_dataset, args.set)
+    eval_ds = load_dataset(args.use_raw_dataset, args.set_to_run)
     print("Loaded evaluation dataset:")
     print(pd.DataFrame(eval_ds)["task"].value_counts())
 
-    answers_file = f"output/{args.set}/{args.run_name}.jsonl"
+    answers_file = f"output/{args.set_to_run}/{args.run_name}.jsonl"
     tasks_to_run = get_examples_to_answer(answers_file, eval_ds)
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as exe:
