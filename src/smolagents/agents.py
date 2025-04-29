@@ -23,7 +23,6 @@ import tempfile
 import textwrap
 import time
 from abc import ABC, abstractmethod
-from collections import deque
 from collections.abc import Callable, Generator
 from logging import getLogger
 from pathlib import Path
@@ -57,7 +56,7 @@ from .memory import (
     TaskStep,
     ToolCall,
 )
-from .models import ChatMessage, MessageRole, Model, parse_json_if_needed
+from .models import ChatMessage, CompletionDelta, MessageRole, Model, parse_json_if_needed
 from .monitoring import (
     YELLOW_HEX,
     AgentLogger,
@@ -213,15 +212,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert (
-                not missing_keys
-            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert (
-                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
-                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
+                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        )
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -249,6 +248,7 @@ class MultiStepAgent(ABC):
         self.monitor = Monitor(self.model, self.logger)
         self.step_callbacks = step_callbacks if step_callbacks is not None else []
         self.step_callbacks.append(self.monitor.update_metrics)
+        self.stream_outputs = False
 
     def _validate_name(self, name: str | None) -> str | None:
         if name is not None and not is_valid_name(name):
@@ -259,9 +259,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(
-                agent.name and agent.description for agent in managed_agents
-            ), "All managed agents need both a name and a description!"
+            assert all(agent.name and agent.description for agent in managed_agents), (
+                "All managed agents need both a name and a description!"
+            )
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -349,7 +349,7 @@ You have been provided with these additional arguments, that you can access usin
             # The steps are returned as they are executed through a generator to iterate on.
             return self._run_stream(task=self.task, max_steps=max_steps, images=images)
         # Outputs are returned only at the end. We only look at the last step.
-        return deque(self._run_stream(task=self.task, max_steps=max_steps, images=images), maxlen=1)[0].final_answer
+        return list(self._run_stream(task=self.task, max_steps=max_steps, images=images))[-1].final_answer
 
     def _run_stream(
         self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
@@ -363,11 +363,11 @@ You have been provided with these additional arguments, that you can access usin
             if self.planning_interval is not None and (
                 self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
             ):
-                planning_step = self._generate_planning_step(
+                for element in self._generate_planning_step(
                     task, is_first_step=(self.step_number == 1), step=self.step_number
-                )
-                self.memory.steps.append(planning_step)
-                yield planning_step
+                ):
+                    yield element
+                self.memory.steps.append(element)
             action_step = ActionStep(
                 step_number=self.step_number, start_time=step_start_time, observations_images=images
             )
@@ -395,7 +395,7 @@ You have been provided with these additional arguments, that you can access usin
     def _execute_step(self, memory_step: ActionStep) -> Generator[Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
         final_answer = None
-        for el in self.step(memory_step):
+        for el in self._step(memory_step):
             final_answer = el
             yield el
         if final_answer is not None and self.final_answer_checks:
@@ -433,7 +433,9 @@ You have been provided with these additional arguments, that you can access usin
             )
         return final_answer
 
-    def _generate_planning_step(self, task, is_first_step: bool, step: int) -> PlanningStep:
+    def _generate_planning_step(
+        self, task, is_first_step: bool, step: int
+    ) -> Generator[CompletionDelta | PlanningStep]:
         if is_first_step:
             input_messages = [
                 {
@@ -449,9 +451,15 @@ You have been provided with these additional arguments, that you can access usin
                     ],
                 }
             ]
-            plan_message = self.model(input_messages, stop_sequences=["<end_plan>"])
+            if self.stream_outputs and hasattr(self.model, "generate_stream"):
+                plan_message_content = ""
+                for completion_delta in self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"]):  # type: ignore
+                    plan_message_content += completion_delta.content
+                    yield completion_delta
+            else:
+                plan_message_content = self.model.generate(input_messages, stop_sequences=["<end_plan>"]).content
             plan = textwrap.dedent(
-                f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message.content}\n```"""
+                f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
             )
         else:
             # Summary mode removes the system prompt and previous planning messages output by the model.
@@ -486,16 +494,22 @@ You have been provided with these additional arguments, that you can access usin
                 ],
             }
             input_messages = [plan_update_pre] + memory_messages + [plan_update_post]
-            plan_message = self.model(input_messages, stop_sequences=["<end_plan>"])
+            if self.stream_outputs and hasattr(self.model, "generate_stream"):
+                plan_message_content = ""
+                for completion_delta in self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"]):  # type: ignore
+                    plan_message_content += completion_delta.content
+                    yield completion_delta
+            else:
+                plan_message_content = self.model.generate(input_messages, stop_sequences=["<end_plan>"]).content
             plan = textwrap.dedent(
-                f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message.content}\n```"""
+                f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message_content}\n```"""
             )
         log_headline = "Initial plan" if is_first_step else "Updated plan"
         self.logger.log(Rule(f"[bold]{log_headline}", style="orange"), Text(plan), level=LogLevel.INFO)
-        return PlanningStep(
+        yield PlanningStep(
             model_input_messages=input_messages,
             plan=plan,
-            model_output_message=plan_message,
+            model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content=plan_message_content),
         )
 
     @property
