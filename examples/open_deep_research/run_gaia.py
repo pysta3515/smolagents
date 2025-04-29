@@ -136,6 +136,7 @@ def load_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
                 ignore_patterns=[".gitattributes", "README.md"],
             )
         else:
+            # WARNING: this dataset is gated: make sure you visit the repo to require access.
             snapshot_download(
                 repo_id="smolagents/GAIA-annotated",
                 repo_type="dataset",
