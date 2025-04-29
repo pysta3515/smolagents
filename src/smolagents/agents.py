@@ -541,13 +541,12 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    @abstractmethod
     def _step(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
         """
-        pass
+        raise NotImplementedError("This method should be implemented in child classes")
 
     def step(self, memory_step: ActionStep) -> Any:
         """
