@@ -434,7 +434,7 @@ You have been provided with these additional arguments, that you can access usin
 
     def _generate_planning_step(
         self, task, is_first_step: bool, step: int
-    ) -> Generator[ChatMessageStreamDelta | PlanningStep]:
+    ) -> Generator[ChatMessageStreamDelta, PlanningStep]:
         if is_first_step:
             input_messages = [
                 {
