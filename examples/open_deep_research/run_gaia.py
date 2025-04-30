@@ -126,7 +126,7 @@ def create_agent_team(model: Model):
     return manager_agent
 
 
-def load_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
+def load_gaia_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
     if not os.path.exists("data/gaia"):
         if use_raw_dataset:
             snapshot_download(
@@ -144,14 +144,18 @@ def load_dataset(use_raw_dataset: bool, set_to_run: str) -> datasets.Dataset:
                 ignore_patterns=[".gitattributes", "README.md"],
             )
 
-    def preprocess_file_paths(
-        row,
-    ):
+    def preprocess_file_paths(row):
         if len(row["file_name"]) > 0:
             row["file_name"] = f"data/gaia/{set_to_run}/" + row["file_name"]
         return row
 
-    eval_ds = datasets.load_dataset("gaia-benchmark/GAIA", "2023_all", split=set_to_run)
+    eval_ds = datasets.load_dataset(
+        "data/gaia/GAIA.py",
+        name="2023_all",
+        split=set_to_run,
+        # data_files={"validation": "validation/metadata.jsonl", "test": "test/metadata.jsonl"},
+    )
+
     eval_ds = eval_ds.rename_columns({"Question": "question", "Final answer": "true_answer", "Level": "task"})
     eval_ds = eval_ds.map(preprocess_file_paths)
     return eval_ds
@@ -268,14 +272,14 @@ def get_examples_to_answer(answers_file: str, eval_ds: datasets.Dataset) -> list
         print("Error when loading records: ", e)
         print("No usable records! ▶️ Starting new.")
         done_questions = []
-    return [line for line in eval_ds.to_list() if line["question"] not in done_questions]
+    return [line for line in eval_ds.to_list() if line["question"] not in done_questions and line["file_name"]]
 
 
 def main():
     args = parse_args()
     print(f"Starting run with arguments: {args}")
 
-    eval_ds = load_dataset(args.use_raw_dataset, args.set_to_run)
+    eval_ds = load_gaia_dataset(args.use_raw_dataset, args.set_to_run)
     print("Loaded evaluation dataset:")
     print(pd.DataFrame(eval_ds)["task"].value_counts())
 
