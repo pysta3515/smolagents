@@ -179,7 +179,7 @@ def answer_single_question(
     else:
         model_params["max_tokens"] = 4096
     model = LiteLLMModel(**model_params)
-    # model = InferenceClientModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct", provider="together", max_tokens=4096)
+    # model = InferenceClientModel(model_id="Qwen/Qwen3-32B", provider="novita", max_tokens=4096)
     document_inspection_tool = TextInspectorTool(model, 100000)
 
     agent = create_agent_team(model)
@@ -268,7 +268,6 @@ def get_examples_to_answer(answers_file: str, eval_ds: datasets.Dataset) -> list
         print("Error when loading records: ", e)
         print("No usable records! ▶️ Starting new.")
         done_questions = []
-    print("FILEPATH", eval_ds.to_list()[0]["file_path"])
     return [line for line in eval_ds.to_list() if line["question"] not in done_questions]
 
 
