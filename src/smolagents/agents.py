@@ -211,15 +211,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -258,9 +258,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -394,7 +394,7 @@ You have been provided with these additional arguments, that you can access usin
     def _execute_step(self, memory_step: ActionStep) -> Generator[Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
         final_answer = None
-        for el in self._step(memory_step):
+        for el in self._step_stream(memory_step):
             final_answer = el
             yield el
         if final_answer is not None and self.final_answer_checks:
@@ -541,7 +541,7 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    def _step(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
@@ -553,7 +553,7 @@ You have been provided with these additional arguments, that you can access usin
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns either None if the step is not final, or the final answer.
         """
-        return list(self._step(memory_step))[-1]
+        return list(self._step_stream(memory_step))[-1]
 
     def extract_action(self, model_output: str, split_token: str) -> tuple[str, str]:
         """
@@ -1035,7 +1035,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
@@ -1299,7 +1299,7 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
