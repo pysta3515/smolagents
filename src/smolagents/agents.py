@@ -38,6 +38,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
+import codecs
 
 
 if TYPE_CHECKING:
@@ -245,7 +246,7 @@ class MultiStepAgent(ABC):
             self.logger = AgentLogger(level=verbosity_level)
         else:
             self.logger = logger
-
+        self.logger.log(grammar)
         self.monitor = Monitor(self.model, self.logger)
         self.step_callbacks = step_callbacks if step_callbacks is not None else []
         self.step_callbacks.append(self.monitor.update_metrics)
@@ -392,7 +393,12 @@ You have been provided with these additional arguments, that you can access usin
 
     def _execute_step(self, task: str, memory_step: ActionStep) -> Union[None, Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-        final_answer = self.step(memory_step)
+
+        if self.grammar and 'json' in self.grammar.get('type', ''):
+            final_answer = self.json_step(memory_step)
+        else:
+            final_answer = self.step(memory_step)
+
         if final_answer is not None and self.final_answer_checks:
             self._validate_final_answer(final_answer)
         return final_answer
@@ -1346,6 +1352,142 @@ class CodeAgent(MultiStepAgent):
 
         ### Execute action ###
         self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
+        is_final_answer = False
+        try:
+            output, execution_logs, is_final_answer = self.python_executor(code_action)
+            execution_outputs_console = []
+            if len(execution_logs) > 0:
+                execution_outputs_console += [
+                    Text("Execution logs:", style="bold"),
+                    Text(execution_logs),
+                ]
+            observation = "Execution logs:\n" + execution_logs
+        except Exception as e:
+            if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
+                execution_logs = str(self.python_executor.state["_print_outputs"])
+                if len(execution_logs) > 0:
+                    execution_outputs_console = [
+                        Text("Execution logs:", style="bold"),
+                        Text(execution_logs),
+                    ]
+                    memory_step.observations = "Execution logs:\n" + execution_logs
+                    self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+            error_msg = str(e)
+            if "Import of " in error_msg and " is not allowed" in error_msg:
+                self.logger.log(
+                    "[bold red]Warning to user: Code execution failed due to an unauthorized import - Consider passing said import under `additional_authorized_imports` when initializing your CodeAgent.",
+                    level=LogLevel.INFO,
+                )
+            raise AgentExecutionError(error_msg, self.logger)
+
+        truncated_output = truncate_content(str(output))
+        observation += "Last output from code snippet:\n" + truncated_output
+        memory_step.observations = observation
+
+        execution_outputs_console += [
+            Text(
+                f"{('Out - Final answer' if is_final_answer else 'Out')}: {truncated_output}",
+                style=(f"bold {YELLOW_HEX}" if is_final_answer else ""),
+            ),
+        ]
+        self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+        memory_step.action_output = output
+        return output if is_final_answer else None
+
+    def json_step(self, memory_step: ActionStep) -> Union[None, Any]:
+        """
+        Perform one step in the ReAct framework using JSON structured output:
+        the agent thinks, generates JSON containing thought and code, and the code is executed.
+        Returns None if the step is not final.
+        """
+        memory_messages = self.write_memory_to_messages()
+
+        input_messages = memory_messages.copy()
+        ### Generate model output ###
+        memory_step.model_input_messages = input_messages
+        try:
+            additional_args = {"grammar": self.grammar} if self.grammar is not None else {}
+            if self.stream_outputs:
+                output_stream = self.model.generate_stream(
+                    input_messages,
+                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    **additional_args,
+                )
+                output_text = ""
+                with Live("", console=self.logger.console, vertical_overflow="visible") as live:
+                    for event in output_stream:
+                        if isinstance(event, CompletionDelta):
+                            if event.content is not None:
+                                output_text += event.content
+                                live.update(Markdown(output_text))
+                        elif isinstance(event, ToolCall):
+                            memory_step.tool_calls = [event]
+
+                model_output = output_text
+                chat_message = ChatMessage(role="assistant", content=model_output)
+                memory_step.model_output_message = chat_message
+                model_output = chat_message.content
+            else:
+                chat_message: ChatMessage = self.model(
+                    input_messages,
+                    # stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    **additional_args,
+                )
+                memory_step.model_output_message = chat_message
+                model_output = chat_message.content
+                self.logger.log_markdown(
+                    content=f"```json\n{model_output}\n```", # Log as JSON
+                    title="Output message of the LLM:",
+                    level=LogLevel.DEBUG,
+                )
+
+            memory_step.model_output = model_output
+        except Exception as e:
+            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
+
+        ### Parse output ###
+        try:
+            # Attempt to parse the JSON output
+            parsed_json = parse_json_if_needed(model_output)
+
+            if 'thought' not in parsed_json or 'code' not in parsed_json:
+                raise ValueError("Parsed JSON must contain 'thought' and 'code' keys.")
+
+            thought = parsed_json['thought']
+            pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
+            matches = re.findall(pattern, parsed_json['code'], re.DOTALL)
+            if matches:
+                code_action = "\\n\\n".join(match.strip() for match in matches)
+            else:
+                code_action = parsed_json['code']
+            # Decode standard Python escape sequences (like \n, \t, \\) from the JSON string
+            code_action = codecs.decode(code_action, 'unicode_escape')
+
+            # Log the thought process
+            self.logger.log(f"Thought: {thought}", level=LogLevel.DEBUG)
+
+            # Apply final answer fix if necessary (might need adjustment for JSON context)
+            code_action = fix_final_answer_code(code_action)
+        except json.JSONDecodeError as e:
+            error_msg = f"Error decoding JSON output: {e}\nLLM Output:\n{model_output}"
+            raise AgentParsingError(error_msg, self.logger)
+        except ValueError as e:
+            error_msg = f"Error validating JSON structure: {e}\nLLM Output:\n{model_output}"
+            raise AgentParsingError(error_msg, self.logger)
+        except Exception as e:
+            error_msg = f"Error in JSON parsing/validation: {e}\nLLM Output:\n{model_output}"
+            raise AgentParsingError(error_msg, self.logger)
+
+        memory_step.tool_calls = [
+            ToolCall(
+                name="python_interpreter",
+                arguments=code_action,
+                id=f"call_{len(self.memory.steps)}", # Use unique ID based on step count
+            )
+        ]
+
+        ### Execute action ###
+        self.logger.log_code(title="Executing parsed code from JSON:", content=code_action, level=LogLevel.INFO)
         is_final_answer = False
         try:
             output, execution_logs, is_final_answer = self.python_executor(code_action)

@@ -342,7 +342,7 @@ class Model:
             if supports_stop_parameter(self.model_id or ""):
                 completion_kwargs["stop"] = stop_sequences
         if grammar is not None:
-            completion_kwargs["grammar"] = grammar
+            completion_kwargs["response_format"] = grammar
 
         # Handle tools parameter
         if tools_to_call_from:
