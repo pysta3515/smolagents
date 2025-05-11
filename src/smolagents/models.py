@@ -21,7 +21,9 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Dict, Generator, List
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, TypeVar
+
+from pydantic import BaseModel, ConfigDict, create_model
 
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
@@ -286,6 +288,53 @@ def supports_stop_parameter(model_id: str) -> bool:
     return not re.match(pattern, model_name)
 
 
+ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
+
+
+def get_response_format(
+    response_format: type[ResponseFormatT] | dict[str, Any],
+    class_name: str,
+) -> dict[str, Any]:
+    """Convert response format to appropriate schema based on model class.
+
+    Args:
+        response_format: Either a Pydantic model class or a regex format dict
+        class_name: Name of the model class to determine schema format
+
+    Returns:
+        Dictionary containing the response format schema
+
+    Raises:
+        ValueError: If regex format is invalid
+    """
+    if issubclass(response_format, BaseModel):
+        # Open AI SDK compatible format
+        if class_name in ["VLLMModel", "LiteLLMModel", "OpenAIServerModel"]:
+            # Since the code generated in 'code' block will not be json compatible, we have to do a workaround
+            response_format = create_model(
+                response_format.__name__, __base__=response_format, __config__=ConfigDict(extra="forbid")
+            )
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "schema": response_format.model_json_schema(),
+                    "name": response_format.__name__,
+                    "strict": True,
+                },
+            }
+
+        return {
+            "type": "json_object",
+            "value": response_format.model_json_schema(),
+        }
+
+    # Handle regex response formats
+    if isinstance(response_format, dict) and response_format.get("type") == "regex" and "value" in response_format:
+        return response_format
+
+    raise ValueError("")
+
+
 class Model:
     def __init__(
         self,
@@ -307,7 +356,7 @@ class Model:
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, Any] | type[ResponseFormatT] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         convert_images_to_image_urls: bool = False,
@@ -340,8 +389,8 @@ class Model:
             # Some models do not support stop parameter
             if supports_stop_parameter(self.model_id or ""):
                 completion_kwargs["stop"] = stop_sequences
-        if grammar is not None:
-            completion_kwargs["response_format"] = grammar
+        if response_format is not None:
+            completion_kwargs["response_format"] = response_format
 
         # Handle tools parameter
         if tools_to_call_from:
@@ -509,17 +558,20 @@ class VLLMModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         from vllm import SamplingParams  # type: ignore
 
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             flatten_messages_as_text=(not self._is_vlm),
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -628,14 +680,18 @@ class MLXModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
+        if response_format is not None:
+            # TODO: Check if the model supports structured output
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -800,14 +856,18 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> dict[str, Any]:
+        if response_format is not None:
+            # TODO: Check if the model supports structured output
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             **kwargs,
         )
 
@@ -849,14 +909,14 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -888,14 +948,14 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator:
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -1010,14 +1070,17 @@ class LiteLLMModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             api_base=self.api_base,
@@ -1040,16 +1103,20 @@ class LiteLLMModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator:
         if tools_to_call_from:
             raise NotImplementedError("Streaming is not yet supported for tool calling")
+
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1253,14 +1320,17 @@ class InferenceClientModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             convert_images_to_image_urls=True,
             custom_role_conversions=self.custom_role_conversions,
@@ -1276,16 +1346,19 @@ class InferenceClientModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator:
         if tools_to_call_from:
             raise NotImplementedError("Streaming is not yet supported for tool calling")
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1382,16 +1455,18 @@ class OpenAIServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator:
         if tools_to_call_from:
             raise NotImplementedError("Streaming is not yet supported for tool calling")
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1417,21 +1492,26 @@ class OpenAIServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
+        if response_format is not None:
+            response_format = get_response_format(response_format, self.__class__.__name__)
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
             convert_images_to_image_urls=True,
             **kwargs,
         )
+
         response = self.client.chat.completions.create(**completion_kwargs)
+
         self.last_input_token_count = response.usage.prompt_tokens
         self.last_output_token_count = response.usage.completion_tokens
 
@@ -1591,7 +1671,7 @@ class AmazonBedrockServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | dict[str, Any] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         convert_images_to_image_urls: bool = False,
@@ -1607,7 +1687,7 @@ class AmazonBedrockServerModel(ApiModel):
         completion_kwargs = super()._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=None,  # Bedrock support stop_sequence using Inference Config
-            grammar=None,  # Bedrock doesn't support grammar
+            response_format=None,  # Bedrock doesn't support response_format
             tools_to_call_from=tools_to_call_from,
             custom_role_conversions=custom_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,
@@ -1644,7 +1724,7 @@ class AmazonBedrockServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: type[ResponseFormatT] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:

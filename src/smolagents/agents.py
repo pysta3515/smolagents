@@ -33,6 +33,7 @@ import jinja2
 import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
 from jinja2 import StrictUndefined, Template
+from pydantic import BaseModel
 from rich.console import Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -56,7 +57,7 @@ from .memory import (
     TaskStep,
     ToolCall,
 )
-from .models import ChatMessage, CompletionDelta, MessageRole, Model, parse_json_if_needed
+from .models import ChatMessage, CompletionDelta, MessageRole, Model, ResponseFormatT, parse_json_if_needed
 from .monitoring import (
     YELLOW_HEX,
     AgentLogger,
@@ -179,7 +180,7 @@ class MultiStepAgent(ABC):
         tool_parser (`Callable`, *optional*): Function used to parse the tool calls from the LLM output.
         add_base_tools (`bool`, default `False`): Whether to add the base tools to the agent's tools.
         verbosity_level (`LogLevel`, default `LogLevel.INFO`): Level of verbosity of the agent's logs.
-        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+        response_format (`type[ResponseFormatT]`, *optional*): Structured output used to parse the LLM output.
         managed_agents (`list`, *optional*): Managed agents that the agent can call.
         step_callbacks (`list[Callable]`, *optional*): Callbacks that will be called at each step.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
@@ -197,7 +198,7 @@ class MultiStepAgent(ABC):
         max_steps: int = 20,
         add_base_tools: bool = False,
         verbosity_level: LogLevel = LogLevel.INFO,
-        grammar: Optional[Dict[str, str]] = None,
+        response_format: Optional[type[ResponseFormatT] | dict[str, Any]] = None,
         managed_agents: Optional[List] = None,
         step_callbacks: Optional[List[Callable]] = None,
         planning_interval: Optional[int] = None,
@@ -224,7 +225,7 @@ class MultiStepAgent(ABC):
 
         self.max_steps = max_steps
         self.step_number = 0
-        self.grammar = grammar
+        self.response_format = response_format
         self.planning_interval = planning_interval
         self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
@@ -244,7 +245,6 @@ class MultiStepAgent(ABC):
             self.logger = AgentLogger(level=verbosity_level)
         else:
             self.logger = logger
-        self.logger.log(grammar)
         self.monitor = Monitor(self.model, self.logger)
         self.step_callbacks = step_callbacks if step_callbacks is not None else []
         self.step_callbacks.append(self.monitor.update_metrics)
@@ -391,12 +391,7 @@ You have been provided with these additional arguments, that you can access usin
 
     def _execute_step(self, task: str, memory_step: ActionStep) -> Union[None, Any]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-
-        if self.grammar and "json" in self.grammar.get("type", ""):
-            final_answer = self.json_step(memory_step)
-        else:
-            final_answer = self.step(memory_step)
-
+        final_answer = self.step(memory_step)
         if final_answer is not None and self.final_answer_checks:
             self._validate_final_answer(final_answer)
         return final_answer
@@ -1192,7 +1187,7 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
-        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+        response_format (`type[ResponseFormatT]`, *optional*): Structured output used to parse the LLM output.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
@@ -1207,7 +1202,7 @@ class CodeAgent(MultiStepAgent):
         tools: List[Tool],
         model: Model,
         prompt_templates: Optional[PromptTemplates] = None,
-        grammar: Optional[Dict[str, str]] = None,
+        response_format: Optional[type[ResponseFormatT]] = None,
         additional_authorized_imports: Optional[List[str]] = None,
         planning_interval: Optional[int] = None,
         executor_type: str | None = "local",
@@ -1219,7 +1214,7 @@ class CodeAgent(MultiStepAgent):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        if grammar and "json" in grammar.get("type", ""):
+        if response_format and issubclass(response_format, BaseModel):
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("json_code_agent.yaml").read_text()
             )
@@ -1232,7 +1227,7 @@ class CodeAgent(MultiStepAgent):
             tools=tools,
             model=model,
             prompt_templates=prompt_templates,
-            grammar=grammar,
+            response_format=response_format,
             planning_interval=planning_interval,
             **kwargs,
         )
@@ -1288,13 +1283,21 @@ class CodeAgent(MultiStepAgent):
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Returns None if the step is not final.
         """
+
+        if self.response_format and issubclass(self.response_format, BaseModel):
+            final_answer = self.json_step(memory_step)
+        else:
+            final_answer = self.normal_step(memory_step)
+        return final_answer
+
+    def normal_step(self, memory_step: ActionStep) -> Union[None, Any]:
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {"grammar": self.grammar} if self.grammar is not None else {}
+            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,
@@ -1398,57 +1401,6 @@ class CodeAgent(MultiStepAgent):
         memory_step.action_output = output
         return output if is_final_answer else None
 
-    def _extract_and_fix_code(self, code_content: str) -> str:
-        """
-        Extracts code from a string that might be wrapped in markdown code blocks.
-        Handles multiple blocks by joining their contents.
-        Assumes code_content is an already Python-string-unescaped string.
-        """
-        pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
-        matches = re.findall(pattern, code_content, re.DOTALL)
-        if matches:
-            code_content = "\n\n".join(match.strip() for match in matches)
-        return code_content
-
-    def _parse_json_from_string(self, model_output: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Fallback parser for JSON-like string to extract 'thought' and 'code'.
-        Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
-        """
-        thought = None
-        code_action = None
-
-        try:
-            # Regex for thought: captures content within quotes.
-            thought_match = re.search(r'"thought"\s*:\s*"(.*?)"', model_output, re.DOTALL)
-            if thought_match:
-                raw_thought_str = thought_match.group(1)
-                thought = raw_thought_str  # Use raw string
-            else:
-                self.logger.log("Fallback: 'thought' field not found using regex.", level=LogLevel.WARNING)
-        except Exception as e:
-            self.logger.log(f"Fallback: Error extracting 'thought': {e}", level=LogLevel.DEBUG)
-
-        try:
-            # Regex for code: captures content within quotes.
-            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}', model_output, re.DOTALL)
-            if code_match:
-                raw_code_content_str = code_match.group(1)
-                # Decode the raw string content
-                try:
-                    unescaped_code_content_str = codecs.decode(raw_code_content_str, "unicode_escape")
-                except Exception as e:
-                    self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
-                    unescaped_code_content_str = raw_code_content_str.replace("\\", "")
-                # Pass unescaped string to markdown extractor
-                code_action = self._extract_and_fix_code(unescaped_code_content_str)
-            else:
-                self.logger.log("Fallback: 'code' field not found using regex.", level=LogLevel.WARNING)
-        except Exception as e:
-            self.logger.log(f"Fallback: Error extracting 'code': {e}", level=LogLevel.DEBUG)
-
-        return thought, code_action
-
     def json_step(self, memory_step: ActionStep) -> Union[None, Any]:
         """
         Perform one step in the ReAct framework using JSON structured output:
@@ -1461,7 +1413,7 @@ class CodeAgent(MultiStepAgent):
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {"grammar": self.grammar} if self.grammar is not None else {}
+            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,
@@ -1577,6 +1529,57 @@ class CodeAgent(MultiStepAgent):
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
         return output if is_final_answer else None
+
+    def _extract_and_fix_code(self, code_content: str) -> str:
+        """
+        Extracts code from a string that might be wrapped in markdown code blocks.
+        Handles multiple blocks by joining their contents.
+        Assumes code_content is an already Python-string-unescaped string.
+        """
+        pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
+        matches = re.findall(pattern, code_content, re.DOTALL)
+        if matches:
+            code_content = "\n\n".join(match.strip() for match in matches)
+        return code_content
+
+    def _parse_json_from_string(self, model_output: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Fallback parser for JSON-like string to extract 'thought' and 'code'.
+        Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
+        """
+        thought = None
+        code_action = None
+
+        try:
+            # Regex for thought: captures content within quotes.
+            thought_match = re.search(r'"thought"\s*:\s*"(.*?)"', model_output, re.DOTALL)
+            if thought_match:
+                raw_thought_str = thought_match.group(1)
+                thought = raw_thought_str  # Use raw string
+            else:
+                self.logger.log("Fallback: 'thought' field not found using regex.", level=LogLevel.WARNING)
+        except Exception as e:
+            self.logger.log(f"Fallback: Error extracting 'thought': {e}", level=LogLevel.DEBUG)
+
+        try:
+            # Regex for code: captures content within quotes.
+            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}', model_output, re.DOTALL)
+            if code_match:
+                raw_code_content_str = code_match.group(1)
+                # Decode the raw string content
+                try:
+                    unescaped_code_content_str = codecs.decode(raw_code_content_str, "unicode_escape")
+                except Exception as e:
+                    self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
+                    unescaped_code_content_str = raw_code_content_str.replace("\\", "")
+                # Pass unescaped string to markdown extractor
+                code_action = self._extract_and_fix_code(unescaped_code_content_str)
+            else:
+                self.logger.log("Fallback: 'code' field not found using regex.", level=LogLevel.WARNING)
+        except Exception as e:
+            self.logger.log(f"Fallback: Error extracting 'code': {e}", level=LogLevel.DEBUG)
+
+        return thought, code_action
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.
