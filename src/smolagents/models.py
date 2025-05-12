@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
 
-
 if TYPE_CHECKING:
     from huggingface_hub import (
         ChatCompletionOutputFunctionDefinition,
@@ -343,7 +342,7 @@ class Model:
             if supports_stop_parameter(self.model_id or ""):
                 completion_kwargs["stop"] = stop_sequences
         if grammar is not None:
-            completion_kwargs["grammar"] = grammar
+            completion_kwargs["response_format"] = grammar
 
         # Handle tools parameter
         if tools_to_call_from:
@@ -402,9 +401,7 @@ class Model:
         message.role = MessageRole.ASSISTANT  # Overwrite role if needed
         if not message.tool_calls:
             assert message.content is not None, "Message contains no content and no tool calls"
-            message.tool_calls = [
-                get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
-            ]
+            message.tool_calls = [get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)]
         assert len(message.tool_calls) > 0, "No tool call was found in the model output"
         for tool_call in message.tool_calls:
             tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)

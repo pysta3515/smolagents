@@ -14,6 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import codecs
 import importlib
 import inspect
 import json
@@ -32,13 +33,13 @@ import jinja2
 import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
 from jinja2 import StrictUndefined, Template
+from pydantic import BaseModel, Field
 from rich.console import Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
-
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -78,7 +79,6 @@ from .utils import (
     parse_code_blobs,
     truncate_content,
 )
-
 
 logger = getLogger(__name__)
 
@@ -166,6 +166,29 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 )
 
 
+class ThoughtAndCodeAnswer(BaseModel):
+    class Config:
+        extra = "forbid"
+
+    thought: str = Field(..., description="A freeform text description of the thought process.")
+    code: str = Field(
+        ...,
+        description="Python code snippet implementing the thought. Should be valid Python.",
+    )
+
+
+# OpenAI compatible JSON response format
+# We can't use just a pydantic model since the code block might not be JSON serializable
+DEFAULT_CODEAGENT_JSON_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "schema": ThoughtAndCodeAnswer.model_json_schema(),
+        "name": ThoughtAndCodeAnswer.__name__,
+        "strict": True,
+    },
+}
+
+
 class MultiStepAgent(ABC):
     """
     Agent class that solves the given task step by step, using the ReAct framework:
@@ -178,7 +201,7 @@ class MultiStepAgent(ABC):
         max_steps (`int`, default `20`): Maximum number of steps the agent can take to solve the task.
         add_base_tools (`bool`, default `False`): Whether to add the base tools to the agent's tools.
         verbosity_level (`LogLevel`, default `LogLevel.INFO`): Level of verbosity of the agent's logs.
-        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+        response_format (`dict[str, str]`, *optional*): Response format used to parse the LLM output.
         managed_agents (`list`, *optional*): Managed agents that the agent can call.
         step_callbacks (`list[Callable]`, *optional*): Callbacks that will be called at each step.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
@@ -196,7 +219,7 @@ class MultiStepAgent(ABC):
         max_steps: int = 20,
         add_base_tools: bool = False,
         verbosity_level: LogLevel = LogLevel.INFO,
-        grammar: dict[str, str] | None = None,
+        response_format: dict[str, str] | None = None,
         managed_agents: list | None = None,
         step_callbacks: list[Callable] | None = None,
         planning_interval: int | None = None,
@@ -223,7 +246,7 @@ class MultiStepAgent(ABC):
 
         self.max_steps = max_steps
         self.step_number = 0
-        self.grammar = grammar
+        self.response_format = response_format
         self.planning_interval = planning_interval
         self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
@@ -805,7 +828,7 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": self.prompt_templates,
             "max_steps": self.max_steps,
             "verbosity_level": int(self.logger.level),
-            "grammar": self.grammar,
+            "response_format": self.response_format,
             "planning_interval": self.planning_interval,
             "name": self.name,
             "description": self.description,
@@ -844,7 +867,7 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": agent_dict.get("prompt_templates"),
             "max_steps": agent_dict.get("max_steps"),
             "verbosity_level": agent_dict.get("verbosity_level"),
-            "grammar": agent_dict.get("grammar"),
+            "response_format": agent_dict.get("response_format"),
             "planning_interval": agent_dict.get("planning_interval"),
             "name": agent_dict.get("name"),
             "description": agent_dict.get("description"),
@@ -1215,7 +1238,7 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
-        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+        use_structured_output (`bool`, default `False`): Whether to use structured output for the model's output.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
@@ -1230,7 +1253,7 @@ class CodeAgent(MultiStepAgent):
         tools: list[Tool],
         model: Model,
         prompt_templates: PromptTemplates | None = None,
-        grammar: dict[str, str] | None = None,
+        use_structured_output: bool = False,
         additional_authorized_imports: list[str] | None = None,
         planning_interval: int | None = None,
         executor_type: str | None = "local",
@@ -1242,14 +1265,19 @@ class CodeAgent(MultiStepAgent):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        prompt_templates = prompt_templates or yaml.safe_load(
-            importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
-        )
+        if use_structured_output:
+            prompt_templates = prompt_templates or yaml.safe_load(
+                importlib.resources.files("smolagents.prompts").joinpath("json_code_agent.yaml").read_text()
+            )
+        else:
+            prompt_templates = prompt_templates or yaml.safe_load(
+                importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
+            )
         super().__init__(
             tools=tools,
             model=model,
             prompt_templates=prompt_templates,
-            grammar=grammar,
+            response_format=DEFAULT_CODEAGENT_JSON_RESPONSE_FORMAT if use_structured_output else None,
             planning_interval=planning_interval,
             **kwargs,
         )
@@ -1304,13 +1332,23 @@ class CodeAgent(MultiStepAgent):
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
         """
+        if self.response_format:
+            yield from self._json_step(memory_step)
+        else:
+            yield from self._step(memory_step)
+
+    def _step(self, memory_step: ActionStep) -> Generator[Any]:
+        """
+        Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
+        Yields either None if the step is not final, or the final answer.
+        """
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {"grammar": self.grammar} if self.grammar is not None else {}
+            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,
@@ -1411,6 +1449,180 @@ class CodeAgent(MultiStepAgent):
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
         yield output if is_final_answer else None
+
+    def _json_step(self, memory_step: ActionStep) -> Generator[Any]:
+        """
+        Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
+        Yields either None if the step is not final, or the final answer.
+        """
+        memory_messages = self.write_memory_to_messages()
+
+        input_messages = memory_messages.copy()
+        ### Generate model output ###
+        memory_step.model_input_messages = input_messages
+        try:
+            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
+            if self.stream_outputs:
+                output_stream = self.model.generate_stream(
+                    input_messages,
+                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    **additional_args,
+                )
+                output_text = ""
+                with Live("", console=self.logger.console, vertical_overflow="visible") as live:
+                    for event in output_stream:
+                        if event.content is not None:
+                            output_text += event.content
+                            live.update(Markdown(output_text))
+                        yield event
+
+                model_output = output_text
+                chat_message = ChatMessage(role="assistant", content=model_output)
+                memory_step.model_output_message = chat_message
+                model_output = chat_message.content
+            else:
+                chat_message: ChatMessage = self.model.generate(
+                    input_messages,
+                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    **additional_args,
+                )
+                memory_step.model_output_message = chat_message
+                model_output = chat_message.content
+                self.logger.log_markdown(
+                    content=f"```json\n{model_output}\n```",
+                    title="Output message of the LLM:",
+                    level=LogLevel.DEBUG,
+                )
+
+            memory_step.model_output = model_output
+        except Exception as e:
+            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
+
+        ### Parse output ###
+        thought, code_action = self._parse_json_from_string(model_output)
+
+        if thought is None or code_action is None:
+            missing_fields = []
+            if thought is None:
+                missing_fields.append("'thought'")
+            if code_action is None:
+                missing_fields.append("'code'")
+            raise AgentParsingError(
+                f"Error decoding JSON output, and string-based fallback also failed to extract {missing_fields}.\\n"
+                f"LLM Output:\\n{model_output}",
+                self.logger,
+            )
+
+        if code_action is not None:
+            code_action = fix_final_answer_code(code_action)
+        else:
+            raise AgentParsingError(
+                f"Code could not be parsed from your output. Make sure to include a 'code' field in your output.\\nPrevious output:\\n{model_output}",
+                self.logger,
+            )
+
+        memory_step.tool_calls = [
+            ToolCall(
+                name="python_interpreter",
+                arguments=code_action,
+                id=f"call_{len(self.memory.steps)}",
+            )
+        ]
+
+        ### Execute action ###
+        self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
+        is_final_answer = False
+        try:
+            output, execution_logs, is_final_answer = self.python_executor(code_action)
+            execution_outputs_console = []
+            if len(execution_logs) > 0:
+                execution_outputs_console += [
+                    Text("Execution logs:", style="bold"),
+                    Text(execution_logs),
+                ]
+            observation = "Execution logs:\n" + execution_logs
+        except Exception as e:
+            if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
+                execution_logs = str(self.python_executor.state["_print_outputs"])
+                if len(execution_logs) > 0:
+                    execution_outputs_console = [
+                        Text("Execution logs:", style="bold"),
+                        Text(execution_logs),
+                    ]
+                    memory_step.observations = "Execution logs:\n" + execution_logs
+                    self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+            error_msg = str(e)
+            if "Import of " in error_msg and " is not allowed" in error_msg:
+                self.logger.log(
+                    "[bold red]Warning to user: Code execution failed due to an unauthorized import - Consider passing said import under `additional_authorized_imports` when initializing your CodeAgent.",
+                    level=LogLevel.INFO,
+                )
+            raise AgentExecutionError(error_msg, self.logger)
+
+        truncated_output = truncate_content(str(output))
+        observation += "Last output from code snippet:\n" + truncated_output
+        memory_step.observations = observation
+
+        execution_outputs_console += [
+            Text(
+                f"{('Out - Final answer' if is_final_answer else 'Out')}: {truncated_output}",
+                style=(f"bold {YELLOW_HEX}" if is_final_answer else ""),
+            ),
+        ]
+        self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+        memory_step.action_output = output
+        yield output if is_final_answer else None
+
+    def _parse_json_from_string(self, model_output: str) -> tuple[str, str]:
+        """
+        Fallback parser for JSON-like string to extract 'thought' and 'code'.
+        Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
+        """
+        thought = None
+        code_action = None
+
+        try:
+            # Regex for thought: captures content within quotes.
+            thought_match = re.search(r'"thought"\s*:\s*"(.*?)"', model_output, re.DOTALL)
+            if thought_match:
+                thought = thought_match.group(1)
+            else:
+                self.logger.log("Fallback: 'thought' field not found using regex.", level=LogLevel.WARNING)
+        except Exception as e:
+            self.logger.log(f"Fallback: Error extracting 'thought': {e}", level=LogLevel.DEBUG)
+
+        try:
+            # Regex for code: captures content within quotes.
+            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}', model_output, re.DOTALL)
+            if code_match:
+                raw_code_content_str = code_match.group(1)
+                # Decode the raw string content
+                try:
+                    unescaped_code_content_str = codecs.decode(raw_code_content_str, "unicode_escape")
+                except Exception as e:
+                    self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
+                    unescaped_code_content_str = raw_code_content_str.replace("\\", "")
+
+                # Pass unescaped string to markdown extractor
+                code_action = self._extract_and_fix_code(unescaped_code_content_str)
+            else:
+                self.logger.log("Fallback: 'code' field not found using regex.", level=LogLevel.WARNING)
+        except Exception as e:
+            self.logger.log(f"Fallback: Error extracting 'code': {e}", level=LogLevel.DEBUG)
+
+        return thought, code_action
+
+    def _extract_and_fix_code(self, code_content: str) -> str:
+        """
+        Extracts code from a string that might be wrapped in markdown code blocks.
+        Handles multiple blocks by joining their contents.
+        Assumes code_content is an already Python-string-unescaped string.
+        """
+        pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
+        matches = re.findall(pattern, code_content, re.DOTALL)
+        if matches:
+            code_content = "\n\n".join(match.strip() for match in matches)
+        return code_content
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.
