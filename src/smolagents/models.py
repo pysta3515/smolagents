@@ -308,7 +308,7 @@ class Model:
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         convert_images_to_image_urls: bool = False,
@@ -319,7 +319,7 @@ class Model:
 
         Parameter priority from high to low:
         1. Explicitly passed kwargs
-        2. Specific parameters (stop_sequences, grammar, etc.)
+        2. Specific parameters (stop_sequences, response_format, etc.)
         3. Default values in self.kwargs
         """
         # Clean and standardize the message list
@@ -341,8 +341,8 @@ class Model:
             # Some models do not support stop parameter
             if supports_stop_parameter(self.model_id or ""):
                 completion_kwargs["stop"] = stop_sequences
-        if grammar is not None:
-            completion_kwargs["response_format"] = grammar
+        if response_format is not None:
+            completion_kwargs["response_format"] = response_format
 
         # Handle tools parameter
         if tools_to_call_from:
@@ -370,7 +370,7 @@ class Model:
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
@@ -381,8 +381,8 @@ class Model:
                 A list of message dictionaries to be processed. Each dictionary should have the structure `{"role": "user/system", "content": "message content"}`.
             stop_sequences (`List[str]`, *optional*):
                 A list of strings that will stop the generation if encountered in the model's output.
-            grammar (`str`, *optional*):
-                The grammar or formatting structure to use in the model's response.
+            response_format (`dict[str, str]`, *optional*):
+                The response format to use in the model's response.
             tools_to_call_from (`List[Tool]`, *optional*):
                 A list of tools that the model can use to generate responses.
             **kwargs:
@@ -507,17 +507,23 @@ class VLLMModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         from vllm import SamplingParams  # type: ignore
 
+        if response_format is not None:
+            # Override the OpenAI schema for VLLM compatibility
+            response_format = {
+                "guided_json": response_format["json_schema"]["schema"],
+            }
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             flatten_messages_as_text=(not self._is_vlm),
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -626,14 +632,14 @@ class MLXModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -798,14 +804,21 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> dict[str, Any]:
+        if response_format is not None:
+            # Override the OpenAI schema for Inferece Endpoint compatibility
+            response_format = {
+                "type": "json_object",
+                "value": response_format["json_schema"]["schema"],
+            }
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             **kwargs,
         )
 
@@ -847,14 +860,14 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -886,14 +899,14 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -1008,14 +1021,14 @@ class LiteLLMModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             api_base=self.api_base,
@@ -1038,7 +1051,7 @@ class LiteLLMModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
@@ -1047,7 +1060,7 @@ class LiteLLMModel(ApiModel):
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1256,14 +1269,21 @@ class InferenceClientModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
+        if response_format is not None:
+            # Override the OpenAI schema for Inferece Endpoint compatibility
+            response_format = {
+                "type": "json_object",
+                "value": response_format["json_schema"]["schema"],
+            }
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             convert_images_to_image_urls=True,
             custom_role_conversions=self.custom_role_conversions,
@@ -1279,16 +1299,22 @@ class InferenceClientModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
         if tools_to_call_from:
             raise NotImplementedError("Streaming is not yet supported for tool calling")
+        if response_format is not None:
+            # Override the OpenAI schema for Inferece Endpoint compatibility
+            response_format = {
+                "type": "json_object",
+                "value": response_format["json_schema"]["schema"],
+            }
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1385,7 +1411,7 @@ class OpenAIServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
@@ -1394,7 +1420,7 @@ class OpenAIServerModel(ApiModel):
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1420,14 +1446,14 @@ class OpenAIServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            grammar=grammar,
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
@@ -1594,7 +1620,7 @@ class AmazonBedrockServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         convert_images_to_image_urls: bool = False,
@@ -1610,7 +1636,7 @@ class AmazonBedrockServerModel(ApiModel):
         completion_kwargs = super()._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=None,  # Bedrock support stop_sequence using Inference Config
-            grammar=None,  # Bedrock doesn't support grammar
+            response_format=None,  # Bedrock doesn't support response_format
             tools_to_call_from=tools_to_call_from,
             custom_role_conversions=custom_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,
@@ -1647,7 +1673,7 @@ class AmazonBedrockServerModel(ApiModel):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        grammar: str | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
