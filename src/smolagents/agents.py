@@ -1238,7 +1238,7 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
-        use_structured_output (`bool`, default `False`): Whether to use structured output for the model's output.
+        use_structured_output (`bool`, default `False`): Whether to use structured JSON generation in the action step.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
@@ -1593,7 +1593,7 @@ class CodeAgent(MultiStepAgent):
 
         try:
             # Regex for code: captures content within quotes.
-            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}', model_output, re.DOTALL)
+            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}(?=$)', model_output, re.DOTALL)
             if code_match:
                 raw_code_content_str = code_match.group(1)
                 # Decode the raw string content
