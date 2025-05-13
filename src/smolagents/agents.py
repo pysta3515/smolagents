@@ -1499,19 +1499,7 @@ class CodeAgent(MultiStepAgent):
             raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
 
         ### Parse output ###
-        thought, code_action = self._parse_json_from_string(model_output)
-
-        if thought is None or code_action is None:
-            missing_fields = []
-            if thought is None:
-                missing_fields.append("'thought'")
-            if code_action is None:
-                missing_fields.append("'code'")
-            raise AgentParsingError(
-                f"Error decoding JSON output, and string-based fallback also failed to extract {missing_fields}.\\n"
-                f"LLM Output:\\n{model_output}",
-                self.logger,
-            )
+        code_action = self._parse_json_from_string(model_output)
 
         if code_action is not None:
             code_action = fix_final_answer_code(code_action)
@@ -1573,27 +1561,16 @@ class CodeAgent(MultiStepAgent):
         memory_step.action_output = output
         yield output if is_final_answer else None
 
-    def _parse_json_from_string(self, model_output: str) -> tuple[str, str]:
+    def _parse_json_from_string(self, model_output: str) -> str:
         """
-        Fallback parser for JSON-like string to extract 'thought' and 'code'.
+        Parser for JSON-like string to extract the 'code' field.
         Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
+        The 'thought' field is disregarded since its not needed for action step.
         """
-        thought = None
         code_action = None
-
-        try:
-            # Regex for thought: captures content within quotes.
-            thought_match = re.search(r'"thought"\s*:\s*"(.*?)"', model_output, re.DOTALL)
-            if thought_match:
-                thought = thought_match.group(1)
-            else:
-                self.logger.log("Fallback: 'thought' field not found using regex.", level=LogLevel.WARNING)
-        except Exception as e:
-            self.logger.log(f"Fallback: Error extracting 'thought': {e}", level=LogLevel.DEBUG)
-
         try:
             # Regex for code: captures content within quotes.
-            code_match = re.search(r'"code"\s*:\s*"(.*?)"\s*}(?=$)', model_output, re.DOTALL)
+            code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*,|\s*}$)', model_output, re.DOTALL)
             if code_match:
                 raw_code_content_str = code_match.group(1)
                 # Decode the raw string content
@@ -1610,7 +1587,7 @@ class CodeAgent(MultiStepAgent):
         except Exception as e:
             self.logger.log(f"Fallback: Error extracting 'code': {e}", level=LogLevel.DEBUG)
 
-        return thought, code_action
+        return code_action
 
     def _extract_and_fix_code(self, code_content: str) -> str:
         """
