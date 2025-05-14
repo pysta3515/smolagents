@@ -355,10 +355,13 @@ You have been provided with these additional arguments, that you can access usin
     ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep]:
         final_answer = None
         self.step_number = 1
+        step_start_time = time.time()
         while final_answer is None and self.step_number <= max_steps:
+            action_step = ActionStep(
+                step_number=self.step_number, start_time=step_start_time, observations_images=images
+            )
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
-            step_start_time = time.time()
             if self.planning_interval is not None and (
                 self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
             ):
@@ -367,9 +370,6 @@ You have been provided with these additional arguments, that you can access usin
                 ):
                     yield element
                 self.memory.steps.append(element)
-            action_step = ActionStep(
-                step_number=self.step_number, start_time=step_start_time, observations_images=images
-            )
             try:
                 for el in self._execute_step(action_step):
                     yield el
