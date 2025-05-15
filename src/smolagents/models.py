@@ -1273,13 +1273,6 @@ class InferenceClientModel(ApiModel):
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
-        if response_format is not None:
-            # Override the OpenAI schema for Inferece Endpoint compatibility
-            response_format = {
-                "type": "json_object",
-                "value": response_format["json_schema"]["schema"],
-            }
-
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -1305,12 +1298,6 @@ class InferenceClientModel(ApiModel):
     ) -> Generator[ChatMessageStreamDelta]:
         if tools_to_call_from:
             raise NotImplementedError("Streaming is not yet supported for tool calling")
-        if response_format is not None:
-            # Override the OpenAI schema for Inferece Endpoint compatibility
-            response_format = {
-                "type": "json_object",
-                "value": response_format["json_schema"]["schema"],
-            }
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,

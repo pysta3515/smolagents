@@ -33,7 +33,6 @@ import jinja2
 import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
 from jinja2 import StrictUndefined, Template
-from pydantic import BaseModel, Field
 from rich.console import Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -166,24 +165,29 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 )
 
 
-class ThoughtAndCodeAnswer(BaseModel):
-    class Config:
-        extra = "forbid"
-
-    thought: str = Field(..., description="A freeform text description of the thought process.")
-    code: str = Field(
-        ...,
-        description="Python code snippet implementing the thought. Should be valid Python.",
-    )
-
-
 # OpenAI compatible JSON response format
-# We can't use just a pydantic model since the code block might not be JSON serializable
 DEFAULT_CODEAGENT_JSON_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
-        "schema": ThoughtAndCodeAnswer.model_json_schema(),
-        "name": ThoughtAndCodeAnswer.__name__,
+        "schema": {
+            "additionalProperties": False,
+            "properties": {
+                "thought": {
+                    "description": "A free form text description of the thought process.",
+                    "title": "Thought",
+                    "type": "string",
+                },
+                "code": {
+                    "description": "Valid Python code snippet implementing the thought.",
+                    "title": "Code",
+                    "type": "string",
+                },
+            },
+            "required": ["thought", "code"],
+            "title": "ThoughtAndCodeAnswer",
+            "type": "object",
+        },
+        "name": "ThoughtAndCodeAnswer",
         "strict": True,
     },
 }
