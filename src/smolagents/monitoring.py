@@ -15,9 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
 
 from rich import box
 from rich.console import Console, Group
@@ -31,18 +29,7 @@ from rich.tree import Tree
 from smolagents.utils import escape_code_brackets
 
 
-__all__ = ["AgentLogger", "LogLevel", "Monitor", "RunResult"]
-
-
-@dataclass
-class RunResult:
-    """Holds extended information about an agent run."""
-
-    result: Any
-    token_usage: dict[str, int] | None
-    messages: list[dict]
-    duration: float
-    state: str
+__all__ = ["AgentLogger", "LogLevel", "Monitor"]
 
 
 class Monitor:

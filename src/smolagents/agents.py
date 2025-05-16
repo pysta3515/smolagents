@@ -24,6 +24,7 @@ import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -54,7 +55,9 @@ from .memory import (
     PlanningStep,
     SystemPromptStep,
     TaskStep,
+    Timing,
     ToolCall,
+    Usage,
 )
 from .models import ChatMessage, ChatMessageStreamDelta, MessageRole, Model, parse_json_if_needed
 from .monitoring import (
@@ -62,7 +65,6 @@ from .monitoring import (
     AgentLogger,
     LogLevel,
     Monitor,
-    RunResult,
 )
 from .remote_executors import DockerExecutor, E2BExecutor
 from .tools import Tool
@@ -167,6 +169,17 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 )
 
 
+@dataclass
+class RunResult:
+    """Holds extended information about an agent run."""
+
+    result: Any
+    token_usage: dict[str, int] | None
+    messages: list[dict]
+    duration: float
+    state: str
+
+
 class MultiStepAgent(ABC):
     """
     Agent class that solves the given task step by step, using the ReAct framework:
@@ -213,15 +226,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -261,9 +274,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -394,31 +407,34 @@ You have been provided with these additional arguments, that you can access usin
         while final_answer is None and self.step_number <= max_steps:
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
-            step_start_time = time.time()
             if self.planning_interval is not None and (
                 self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
             ):
-                planning_start = step_start_time
+                planning_start_time = time.time()
                 planning_step = None
                 for element in self._generate_planning_step(
                     task, is_first_step=(self.step_number == 1), step=self.step_number
                 ):
                     yield element
                     planning_step = element
-                if planning_step is not None:
-                    planning_step.end_time = time.time()
-                    planning_step.duration = planning_step.end_time - planning_start
-                    if getattr(self.model, "last_input_token_count", None) is not None:
-                        planning_step.input_token_count = self.model.last_input_token_count
-                        planning_step.output_token_count = self.model.last_output_token_count
-                    self.memory.steps.append(planning_step)
-                    for callback in self.step_callbacks:
-                        callback(planning_step) if len(inspect.signature(callback).parameters) == 1 else callback(
-                            planning_step, agent=self
-                        )
-                step_start_time = time.time()
+                assert isinstance(planning_step, PlanningStep)
+                self.memory.steps.append(planning_step)
+                if getattr(self.model, "last_input_token_count", None) is not None:
+                    planning_step.usage = Usage(
+                        input_tokens=self.model.last_input_token_count,
+                        output_tokens=self.model.last_output_token_count,
+                    )
+                planning_end_time = time.time()
+                planning_step.timing = Timing(
+                    start_time=planning_start_time,
+                    end_time=planning_end_time,
+                    duration=planning_end_time - planning_start_time,
+                )
+            action_step_start_time = time.time()
             action_step = ActionStep(
-                step_number=self.step_number, start_time=step_start_time, observations_images=images
+                step_number=self.step_number,
+                timing=Timing(start_time=action_step_start_time),
+                observations_images=images,
             )
             try:
                 for el in self._execute_step(action_step):
@@ -431,13 +447,13 @@ You have been provided with these additional arguments, that you can access usin
                 # Other AgentError types are caused by the Model, so we should log them and iterate.
                 action_step.error = e
             finally:
-                self._finalize_step(action_step, step_start_time)
+                self._finalize_step(action_step)
                 self.memory.steps.append(action_step)
                 yield action_step
                 self.step_number += 1
 
         if final_answer is None and self.step_number == max_steps + 1:
-            final_answer = self._handle_max_steps_reached(task, images, step_start_time)
+            final_answer = self._handle_max_steps_reached(task, images)
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
@@ -458,25 +474,30 @@ You have been provided with these additional arguments, that you can access usin
             except Exception as e:
                 raise AgentError(f"Check {check_function.__name__} failed with error: {e}", self.logger)
 
-    def _finalize_step(self, memory_step: ActionStep, step_start_time: float):
-        memory_step.end_time = time.time()
-        memory_step.duration = memory_step.end_time - step_start_time
+    def _finalize_step(self, memory_step: ActionStep):
+        memory_step.timing.end_time = time.time()
+        memory_step.timing.duration = memory_step.timing.end_time - memory_step.timing.start_time
         if getattr(self.model, "last_input_token_count", None) is not None:
-            memory_step.input_token_count = self.model.last_input_token_count
-            memory_step.output_token_count = self.model.last_output_token_count
+            memory_step.usage = Usage(
+                input_tokens=self.model.last_input_token_count,
+                output_tokens=self.model.last_output_token_count,
+            )
         for callback in self.step_callbacks:
             # For compatibility with old callbacks that don't take the agent as an argument
             callback(memory_step) if len(inspect.signature(callback).parameters) == 1 else callback(
                 memory_step, agent=self
             )
 
-    def _handle_max_steps_reached(self, task: str, images: list["PIL.Image.Image"], step_start_time: float) -> Any:
+    def _handle_max_steps_reached(self, task: str, images: list["PIL.Image.Image"]) -> Any:
+        action_step_start_time = time.time()
         final_answer = self.provide_final_answer(task, images)
         final_memory_step = ActionStep(
-            step_number=self.step_number, error=AgentMaxStepsError("Reached max steps.", self.logger)
+            step_number=self.step_number,
+            error=AgentMaxStepsError("Reached max steps.", self.logger),
+            timing=Timing(start_time=action_step_start_time),
         )
         final_memory_step.action_output = final_answer
-        self._finalize_step(final_memory_step, step_start_time)
+        self._finalize_step(final_memory_step)
         self.memory.steps.append(final_memory_step)
         return final_answer
 
