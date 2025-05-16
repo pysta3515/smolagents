@@ -62,6 +62,7 @@ from .monitoring import (
     AgentLogger,
     LogLevel,
     Monitor,
+    RunResult,
 )
 from .remote_executors import DockerExecutor, E2BExecutor
 from .tools import Tool
@@ -204,6 +205,7 @@ class MultiStepAgent(ABC):
         description: str | None = None,
         provide_run_summary: bool = False,
         final_answer_checks: list[Callable] | None = None,
+        return_full_results: bool = False,
         logger: AgentLogger | None = None,
     ):
         self.agent_name = self.__class__.__name__
@@ -230,6 +232,7 @@ class MultiStepAgent(ABC):
         self.description = description
         self.provide_run_summary = provide_run_summary
         self.final_answer_checks = final_answer_checks
+        self.return_full_results = return_full_results
 
         self._setup_managed_agents(managed_agents)
         self._setup_tools(tools, add_base_tools)
@@ -347,8 +350,41 @@ You have been provided with these additional arguments, that you can access usin
         if stream:
             # The steps are returned as they are executed through a generator to iterate on.
             return self._run_stream(task=self.task, max_steps=max_steps, images=images)
+        run_start_time = time.time()
         # Outputs are returned only at the end. We only look at the last step.
-        return list(self._run_stream(task=self.task, max_steps=max_steps, images=images))[-1].final_answer
+        try:
+            steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
+            result = steps[-1].final_answer
+            state = "success"
+        except Exception:
+            run_duration = time.time() - run_start_time
+            raise
+        else:
+            run_duration = time.time() - run_start_time
+
+        if self.return_full_results:
+            token_usage = None
+            try:
+                token_usage = self.monitor.get_total_token_counts()
+            except Exception:
+                token_usage = None
+
+            if self.memory.steps and isinstance(getattr(self.memory.steps[-1], "error", None), AgentMaxStepsError):
+                state = "max_steps"
+            elif self.memory.steps and getattr(self.memory.steps[-1], "error", None) is not None:
+                state = "error"
+
+            messages = self.memory.get_full_steps()
+
+            return RunResult(
+                result=result,
+                token_usage=token_usage,
+                messages=messages,
+                duration=run_duration,
+                state=state,
+            )
+
+        return result
 
     def _run_stream(
         self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
@@ -362,11 +398,25 @@ You have been provided with these additional arguments, that you can access usin
             if self.planning_interval is not None and (
                 self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
             ):
+                planning_start = step_start_time
+                planning_step = None
                 for element in self._generate_planning_step(
                     task, is_first_step=(self.step_number == 1), step=self.step_number
                 ):
                     yield element
-                self.memory.steps.append(element)
+                    planning_step = element
+                if planning_step is not None:
+                    planning_step.end_time = time.time()
+                    planning_step.duration = planning_step.end_time - planning_start
+                    if getattr(self.model, "last_input_token_count", None) is not None:
+                        planning_step.input_token_count = self.model.last_input_token_count
+                        planning_step.output_token_count = self.model.last_output_token_count
+                    self.memory.steps.append(planning_step)
+                    for callback in self.step_callbacks:
+                        callback(planning_step) if len(inspect.signature(callback).parameters) == 1 else callback(
+                            planning_step, agent=self
+                        )
+                step_start_time = time.time()
             action_step = ActionStep(
                 step_number=self.step_number, start_time=step_start_time, observations_images=images
             )
@@ -411,6 +461,9 @@ You have been provided with these additional arguments, that you can access usin
     def _finalize_step(self, memory_step: ActionStep, step_start_time: float):
         memory_step.end_time = time.time()
         memory_step.duration = memory_step.end_time - step_start_time
+        if getattr(self.model, "last_input_token_count", None) is not None:
+            memory_step.input_token_count = self.model.last_input_token_count
+            memory_step.output_token_count = self.model.last_output_token_count
         for callback in self.step_callbacks:
             # For compatibility with old callbacks that don't take the agent as an argument
             callback(memory_step) if len(inspect.signature(callback).parameters) == 1 else callback(
@@ -423,13 +476,8 @@ You have been provided with these additional arguments, that you can access usin
             step_number=self.step_number, error=AgentMaxStepsError("Reached max steps.", self.logger)
         )
         final_memory_step.action_output = final_answer
-        final_memory_step.end_time = time.time()
-        final_memory_step.duration = final_memory_step.end_time - step_start_time
+        self._finalize_step(final_memory_step, step_start_time)
         self.memory.steps.append(final_memory_step)
-        for callback in self.step_callbacks:
-            callback(final_memory_step) if len(inspect.signature(callback).parameters) == 1 else callback(
-                final_memory_step, agent=self
-            )
         return final_answer
 
     def _generate_planning_step(
