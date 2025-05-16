@@ -512,21 +512,19 @@ class VLLMModel(Model):
         **kwargs,
     ) -> ChatMessage:
         from vllm import SamplingParams  # type: ignore
-
+        completion_kwargs = self._prepare_completion_kwargs(
+            messages=messages,
+            flatten_messages_as_text=(not self._is_vlm),
+            stop_sequences=stop_sequences,
+            tools_to_call_from=tools_to_call_from,
+            **kwargs,
+        )
         if response_format is not None:
             # Override the OpenAI schema for VLLM compatibility
             response_format = {
                 "guided_json": response_format["json_schema"]["schema"],
             }
 
-        completion_kwargs = self._prepare_completion_kwargs(
-            messages=messages,
-            flatten_messages_as_text=(not self._is_vlm),
-            stop_sequences=stop_sequences,
-            response_format=response_format,
-            tools_to_call_from=tools_to_call_from,
-            **kwargs,
-        )
         messages = completion_kwargs.pop("messages")
         prepared_stop_sequences = completion_kwargs.pop("stop", [])
         tools = completion_kwargs.pop("tools", None)
@@ -555,7 +553,9 @@ class VLLMModel(Model):
         out = self.model.generate(
             prompt,
             sampling_params=sampling_params,
+            guided_options_request=response_format if response_format else None,
         )
+
         output_text = out[0].outputs[0].text
         self.last_input_token_count = len(out[0].prompt_token_ids)
         self.last_output_token_count = len(out[0].outputs[0].token_ids)
@@ -804,21 +804,13 @@ class TransformersModel(Model):
         self,
         messages: list[dict[str, str | list[dict]]],
         stop_sequences: list[str] | None = None,
-        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        if response_format is not None:
-            # Override the OpenAI schema for Inferece Endpoint compatibility
-            response_format = {
-                "type": "json_object",
-                "value": response_format["json_schema"]["schema"],
-            }
 
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=response_format,
             **kwargs,
         )
 
@@ -867,7 +859,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=response_format,
+            response_format=None, # Transformers doesn't support structured generation, use VLLMModel for that
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -906,7 +898,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=response_format,
+            response_format=None, # Transformers doesn't support structured generation, use VLLMModel for that
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
