@@ -1574,7 +1574,7 @@ class CodeAgent(MultiStepAgent):
         code_action = None
         try:
             # Regex for code: captures content within quotes.
-            code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*,|\s*}$)', model_output, re.DOTALL)
+            code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', model_output, re.DOTALL)
             if code_match:
                 raw_code_content_str = code_match.group(1)
                 # Decode the raw string content

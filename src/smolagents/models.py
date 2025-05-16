@@ -639,7 +639,7 @@ class MLXModel(Model):
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=response_format,
+            response_format=None,  # MLX doesn't support response_format
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
