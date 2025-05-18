@@ -1573,19 +1573,10 @@ class CodeAgent(MultiStepAgent):
         """
         code_action = None
         try:
-            # Regex for code: captures content within quotes.
             code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', model_output, re.DOTALL)
             if code_match:
-                raw_code_content_str = code_match.group(1)
-                # Decode the raw string content
-                try:
-                    unescaped_code_content_str = codecs.decode(raw_code_content_str, "unicode_escape")
-                except Exception as e:
-                    self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
-                    unescaped_code_content_str = raw_code_content_str.replace("\\", "")
-
-                # Pass unescaped string to markdown extractor
-                code_action = self._extract_and_fix_code(unescaped_code_content_str)
+                code_content = code_match.group(1)
+                code_action = self._fix_code_formatting(code_content)  # Decode the raw string content
             else:
                 self.logger.log("Fallback: 'code' field not found using regex.", level=LogLevel.WARNING)
         except Exception as e:
@@ -1593,12 +1584,20 @@ class CodeAgent(MultiStepAgent):
 
         return code_action
 
-    def _extract_and_fix_code(self, code_content: str) -> str:
+    def _fix_code_formatting(self, code_content: str) -> str:
         """
         Extracts code from a string that might be wrapped in markdown code blocks.
         Handles multiple blocks by joining their contents.
         Assumes code_content is an already Python-string-unescaped string.
         """
+        # remove escape characters
+        try:
+            code_content = codecs.decode(code_content, "unicode_escape")
+        except Exception as e:
+            self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
+            code_content = code_content.replace("\\", "")
+
+        # extract code from possible markdown code blocks
         pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
         matches = re.findall(pattern, code_content, re.DOTALL)
         if matches:
