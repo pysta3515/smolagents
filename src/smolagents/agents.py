@@ -40,6 +40,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
+
 if TYPE_CHECKING:
     import PIL.Image
 
@@ -78,6 +79,7 @@ from .utils import (
     parse_code_blobs,
     truncate_content,
 )
+
 
 logger = getLogger(__name__)
 

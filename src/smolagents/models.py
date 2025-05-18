@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
 
+
 if TYPE_CHECKING:
     from huggingface_hub import (
         ChatCompletionOutputFunctionDefinition,
