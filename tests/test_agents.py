@@ -489,9 +489,7 @@ class TestAgent:
         assert agent.description == "Empty"
 
     def test_agent_description_gets_correctly_inserted_in_system_prompt(self):
-        managed_agent = CodeAgent(
-            tools=[], model=FakeCodeModelFunctionDef(), name="managed_agent", description="Empty"
-        )
+        managed_agent = CodeAgent(tools=[], model=FakeCodeModelFunctionDef(), name="managed_agent", description="Empty")
         manager_agent = CodeAgent(
             tools=[],
             model=FakeCodeModelFunctionDef(),
@@ -926,7 +924,7 @@ class TestMultiStepAgent:
             "prompt_templates": EMPTY_PROMPT_TEMPLATES,
             "max_steps": 15,
             "verbosity_level": 2,
-            "grammar": {"test": "grammar"},
+            "response_format": True,
             "planning_interval": 3,
             "name": "test_agent",
             "description": "Test agent description",
@@ -942,7 +940,7 @@ class TestMultiStepAgent:
         assert mock_model_class.from_dict.call_args.args[0] == {"model_id": "test/model"}
         assert agent.max_steps == 15
         assert agent.logger.level == 2
-        assert agent.grammar == {"test": "grammar"}
+        assert agent.response_format
         assert agent.planning_interval == 3
         assert agent.name == "test_agent"
         assert agent.description == "Test agent description"
@@ -1226,7 +1224,7 @@ class TestCodeAgent:
         assert agent.description == "dummy description"
         assert agent.max_steps == 10
         assert agent.planning_interval == 2
-        assert agent.grammar is None
+        assert agent.response_format is False
         assert agent.additional_authorized_imports == ["pandas"]
         assert "pandas" in agent.authorized_imports
         assert agent.executor_type == "local"
@@ -1255,7 +1253,7 @@ class TestCodeAgent:
             "prompt_templates": EMPTY_PROMPT_TEMPLATES,
             "max_steps": 15,
             "verbosity_level": 2,
-            "grammar": None,
+            "use_structured_output": False,
             "planning_interval": 3,
             "name": "test_code_agent",
             "description": "Test code agent description",
