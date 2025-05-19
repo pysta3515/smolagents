@@ -256,7 +256,6 @@ def stream_to_gradio(
             "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
         )
     intermediate_text = ""
-    import time
 
     for event in agent.run(
         task, images=task_images, stream=True, reset=reset_agent_memory, additional_args=additional_args
@@ -270,7 +269,6 @@ def stream_to_gradio(
             ):
                 yield message
         elif isinstance(event, ChatMessageStreamDelta):
-            time.sleep(0.1)
             intermediate_text += event.content or ""
             yield intermediate_text
 
@@ -316,7 +314,6 @@ class GradioUI:
 
             yield messages
         except Exception as e:
-            raise e
             print(f"Error in interaction: {str(e)}")
             messages.append(gr.ChatMessage(role="assistant", content=f"Error: {str(e)}"))
             yield messages
