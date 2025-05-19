@@ -489,7 +489,9 @@ class TestAgent:
         assert agent.description == "Empty"
 
     def test_agent_description_gets_correctly_inserted_in_system_prompt(self):
-        managed_agent = CodeAgent(tools=[], model=FakeCodeModelFunctionDef(), name="managed_agent", description="Empty")
+        managed_agent = CodeAgent(
+            tools=[], model=FakeCodeModelFunctionDef(), name="managed_agent", description="Empty"
+        )
         manager_agent = CodeAgent(
             tools=[],
             model=FakeCodeModelFunctionDef(),

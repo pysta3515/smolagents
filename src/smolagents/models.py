@@ -402,7 +402,9 @@ class Model:
         message.role = MessageRole.ASSISTANT  # Overwrite role if needed
         if not message.tool_calls:
             assert message.content is not None, "Message contains no content and no tool calls"
-            message.tool_calls = [get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)]
+            message.tool_calls = [
+                get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
+            ]
         assert len(message.tool_calls) > 0, "No tool call was found in the model output"
         for tool_call in message.tool_calls:
             tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
@@ -513,6 +515,7 @@ class VLLMModel(Model):
         **kwargs,
     ) -> ChatMessage:
         from vllm import SamplingParams  # type: ignore
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             flatten_messages_as_text=(not self._is_vlm),
@@ -808,7 +811,6 @@ class TransformersModel(Model):
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -860,7 +862,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=None, # Transformers doesn't support structured generation, use VLLMModel for that
+            response_format=None,  # Transformers doesn't support structured generation, use VLLMModel for that
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -899,7 +901,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=None, # Transformers doesn't support structured generation, use VLLMModel for that
+            response_format=None,  # Transformers doesn't support structured generation, use VLLMModel for that
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
