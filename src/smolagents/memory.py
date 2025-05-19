@@ -3,7 +3,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from smolagents.models import ChatMessage, MessageRole
-from smolagents.monitoring import AgentLogger, LogLevel
+from smolagents.monitoring import AgentLogger, LogLevel, Timing, TokenUsage
 from smolagents.utils import AgentError, make_json_serializable
 
 
@@ -49,42 +49,28 @@ class MemoryStep:
 
 
 @dataclass
-class Usage:
-    input_tokens: int
-    output_tokens: int
-
-
-@dataclass
-class Timing:
-    start_time: float
-    end_time: float | None = None
-    duration: float | None = None
-
-
-@dataclass
 class ActionStep(MemoryStep):
+    step_number: int
+    timing: Timing
     model_input_messages: list[Message] | None = None
     tool_calls: list[ToolCall] | None = None
-    timing: Timing | None = None
-    step_number: int | None = None
     error: AgentError | None = None
     model_output_message: ChatMessage | None = None
     model_output: str | None = None
     observations: str | None = None
     observations_images: list["PIL.Image.Image"] | None = None
     action_output: Any = None
-    usage: Usage | None = None
+    usage: TokenUsage | None = None
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually
         return {
             "model_input_messages": self.model_input_messages,
             "tool_calls": [tc.dict() for tc in self.tool_calls] if self.tool_calls else [],
-            "start_time": self.start_time,
-            "end_time": self.end_time,
+            "timing": self.timing.dict(),
+            "usage": self.usage.dict() if self.usage else None,
             "step": self.step_number,
             "error": self.error.dict() if self.error else None,
-            "duration": self.duration,
             "model_output_message": self.model_output_message,
             "model_output": self.model_output,
             "observations": self.observations,
@@ -158,7 +144,7 @@ class PlanningStep(MemoryStep):
     model_output_message: ChatMessage
     plan: str
     timing: Timing | None = None
-    usage: Usage | None = None
+    usage: TokenUsage | None = None
 
     def to_messages(self, summary_mode: bool = False) -> list[Message]:
         if summary_mode:

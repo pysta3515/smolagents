@@ -677,7 +677,7 @@ class TransformersModel(Model):
     Parameters:
         model_id (`str`):
             The Hugging Face model ID to be used for inference. This can be a path or model identifier from the Hugging Face model hub.
-            For example, `"Qwen/Qwen2.5-Coder-32B-Instruct"`.
+            For example, `"Qwen/Qwen3-32B"`.
         device_map (`str`, *optional*):
             The device_map to initialize your model with.
         torch_dtype (`str`, *optional*):
@@ -695,7 +695,7 @@ class TransformersModel(Model):
     Example:
     ```python
     >>> engine = TransformersModel(
-    ...     model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
+    ...     model_id="Qwen/Qwen3-32B",
     ...     device="cuda",
     ...     max_new_tokens=5000,
     ... )
@@ -1172,10 +1172,10 @@ class InferenceClientModel(ApiModel):
     Providers include Cerebras, Cohere, Fal, Fireworks, HF-Inference, Hyperbolic, Nebius, Novita, Replicate, SambaNova, Together, and more.
 
     Parameters:
-        model_id (`str`, *optional*, default `"Qwen/Qwen2.5-Coder-32B-Instruct"`):
+        model_id (`str`, *optional*, default `"Qwen/Qwen3-32B"`):
             The Hugging Face model ID to be used for inference.
             This can be a model identifier from the Hugging Face model hub or a URL to a deployed Inference Endpoint.
-            Currently, it defaults to `"Qwen/Qwen2.5-Coder-32B-Instruct"`, but this may change in the future.
+            Currently, it defaults to `"Qwen/Qwen3-32B"`, but this may change in the future.
         provider (`str`, *optional*):
             Name of the provider to use for inference. Can be `"black-forest-labs"`, `"cerebras"`, `"cohere"`, `"fal-ai"`, `"fireworks-ai"`, `"hf-inference"`, `"hyperbolic"`, `"nebius"`, `"novita"`, `"openai"`, `"replicate"`, "sambanova"`, `"together"`, etc.
             Currently, it defaults to hf-inference (HF Inference API).
@@ -1206,8 +1206,8 @@ class InferenceClientModel(ApiModel):
     Example:
     ```python
     >>> engine = InferenceClientModel(
-    ...     model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
-    ...     provider="together",
+    ...     model_id="Qwen/Qwen3-32B",
+    ...     provider="nebius",
     ...     token="your_hf_token_here",
     ...     max_tokens=5000,
     ... )
@@ -1220,7 +1220,7 @@ class InferenceClientModel(ApiModel):
 
     def __init__(
         self,
-        model_id: str = "Qwen/Qwen2.5-Coder-32B-Instruct",
+        model_id: str = "Qwen/Qwen3-32B",
         provider: str | None = None,
         token: str | None = None,
         timeout: int = 120,

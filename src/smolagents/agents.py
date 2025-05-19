@@ -56,8 +56,8 @@ from .memory import (
     SystemPromptStep,
     TaskStep,
     Timing,
+    TokenUsage,
     ToolCall,
-    Usage,
 )
 from .models import ChatMessage, ChatMessageStreamDelta, MessageRole, Model, parse_json_if_needed
 from .monitoring import (
@@ -174,9 +174,9 @@ class RunResult:
     """Holds extended information about an agent run."""
 
     result: Any
-    token_usage: dict[str, int] | None
+    token_usage: TokenUsage | None
     messages: list[dict]
-    duration: float
+    timing: Timing
     state: str
 
 
@@ -218,7 +218,7 @@ class MultiStepAgent(ABC):
         description: str | None = None,
         provide_run_summary: bool = False,
         final_answer_checks: list[Callable] | None = None,
-        return_full_results: bool = False,
+        return_full_result: bool = False,
         logger: AgentLogger | None = None,
     ):
         self.agent_name = self.__class__.__name__
@@ -226,15 +226,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert (
-                not missing_keys
-            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert (
-                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
-                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
+                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        )
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -245,7 +245,7 @@ class MultiStepAgent(ABC):
         self.description = description
         self.provide_run_summary = provide_run_summary
         self.final_answer_checks = final_answer_checks
-        self.return_full_results = return_full_results
+        self.return_full_result = return_full_result
 
         self._setup_managed_agents(managed_agents)
         self._setup_tools(tools, add_base_tools)
@@ -274,9 +274,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(
-                agent.name and agent.description for agent in managed_agents
-            ), "All managed agents need both a name and a description!"
+            assert all(agent.name and agent.description for agent in managed_agents), (
+                "All managed agents need both a name and a description!"
+            )
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -365,27 +365,18 @@ You have been provided with these additional arguments, that you can access usin
             return self._run_stream(task=self.task, max_steps=max_steps, images=images)
         run_start_time = time.time()
         # Outputs are returned only at the end. We only look at the last step.
-        try:
-            steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
-            result = steps[-1].final_answer
-            state = "success"
-        except Exception:
-            run_duration = time.time() - run_start_time
-            raise
-        else:
-            run_duration = time.time() - run_start_time
 
-        if self.return_full_results:
+        steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
+        result = steps[-1].final_answer
+
+        if self.return_full_result:
             token_usage = None
-            try:
-                token_usage = self.monitor.get_total_token_counts()
-            except Exception:
-                token_usage = None
+            token_usage = self.monitor.get_total_token_counts()
 
             if self.memory.steps and isinstance(getattr(self.memory.steps[-1], "error", None), AgentMaxStepsError):
-                state = "max_steps"
-            elif self.memory.steps and getattr(self.memory.steps[-1], "error", None) is not None:
-                state = "error"
+                state = "max_steps_error"
+            else:
+                state = "success"
 
             messages = self.memory.get_full_steps()
 
@@ -393,7 +384,7 @@ You have been provided with these additional arguments, that you can access usin
                 result=result,
                 token_usage=token_usage,
                 messages=messages,
-                duration=run_duration,
+                timing=Timing(start_time=run_start_time, end_time=time.time()),
                 state=state,
             )
 
@@ -420,7 +411,7 @@ You have been provided with these additional arguments, that you can access usin
                 assert isinstance(planning_step, PlanningStep)
                 self.memory.steps.append(planning_step)
                 if getattr(self.model, "last_input_token_count", None) is not None:
-                    planning_step.usage = Usage(
+                    planning_step.usage = TokenUsage(
                         input_tokens=self.model.last_input_token_count,
                         output_tokens=self.model.last_output_token_count,
                     )
@@ -428,7 +419,6 @@ You have been provided with these additional arguments, that you can access usin
                 planning_step.timing = Timing(
                     start_time=planning_start_time,
                     end_time=planning_end_time,
-                    duration=planning_end_time - planning_start_time,
                 )
             action_step_start_time = time.time()
             action_step = ActionStep(
@@ -476,9 +466,8 @@ You have been provided with these additional arguments, that you can access usin
 
     def _finalize_step(self, memory_step: ActionStep):
         memory_step.timing.end_time = time.time()
-        memory_step.timing.duration = memory_step.timing.end_time - memory_step.timing.start_time
         if getattr(self.model, "last_input_token_count", None) is not None:
-            memory_step.usage = Usage(
+            memory_step.usage = TokenUsage(
                 input_tokens=self.model.last_input_token_count,
                 output_tokens=self.model.last_output_token_count,
             )
@@ -710,7 +699,11 @@ You have been provided with these additional arguments, that you can access usin
             self.prompt_templates["managed_agent"]["task"],
             variables=dict(name=self.name, task=task),
         )
-        report = self.run(full_task, **kwargs)
+        result = self.run(full_task, **kwargs)
+        if isinstance(result, RunResult):
+            report = result.result
+        else:
+            report = result
         answer = populate_template(
             self.prompt_templates["managed_agent"]["report"], variables=dict(name=self.name, final_answer=report)
         )

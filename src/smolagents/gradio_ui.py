@@ -94,7 +94,7 @@ def _process_action_step(step_log: ActionStep, skip_model_outputs: bool = False)
     import gradio as gr
 
     # Output the step number
-    step_number = f"Step {step_log.step_number}" if step_log.step_number is not None else "Step"
+    step_number = f"Step {step_log.step_number}"
     if not skip_model_outputs:
         yield gr.ChatMessage(role="assistant", content=f"**{step_number}**", metadata={"status": "done"})
 

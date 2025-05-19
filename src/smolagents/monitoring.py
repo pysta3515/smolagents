@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+from dataclasses import dataclass
 from enum import IntEnum
 
 from rich import box
@@ -29,7 +30,61 @@ from rich.tree import Tree
 from smolagents.utils import escape_code_brackets
 
 
-__all__ = ["AgentLogger", "LogLevel", "Monitor"]
+__all__ = ["AgentLogger", "LogLevel", "Monitor", "TokenUsage", "Timing"]
+
+
+@dataclass
+class TokenUsage:
+    """
+    Contains the token usage information for a given step or run.
+    """
+
+    input_tokens: int
+    output_tokens: int
+
+    def dict(self):
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+        }
+
+    @property
+    def total_tokens(self):
+        return self.input_tokens + self.output_tokens
+
+    def __str__(self):
+        attributes = vars(self).copy()
+        attributes["total_tokens"] = self.total_tokens  # This makes sure the total tokens are also printed
+        return f"TokenUsage({', '.join(f'{key}={value}' for key, value in attributes.items())})"
+
+
+@dataclass
+class Timing:
+    """
+    Contains the timing information for a given step or run.
+    """
+
+    start_time: float
+    end_time: float | None = None
+
+    def dict(self):
+        return {
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": self.duration,
+        }
+
+    @property
+    def duration(self):
+        if self.end_time is None:
+            return None
+        return self.end_time - self.start_time
+
+    def __str__(self):
+        attributes = vars(self).copy()
+        attributes["duration"] = self.duration  # This makes sure the duration is also printed
+        return f"Timing({', '.join(f'{key}={value}' for key, value in attributes.items())})"
 
 
 class Monitor:
@@ -41,11 +96,15 @@ class Monitor:
             self.total_input_token_count = 0
             self.total_output_token_count = 0
 
-    def get_total_token_counts(self):
-        return {
-            "input": self.total_input_token_count,
-            "output": self.total_output_token_count,
-        }
+    def get_total_token_counts(self) -> TokenUsage | None:
+        return (
+            TokenUsage(
+                input_tokens=self.total_input_token_count,
+                output_tokens=self.total_output_token_count,
+            )
+            if hasattr(self, "total_input_token_count")
+            else None
+        )
 
     def reset(self):
         self.step_durations = []
@@ -58,13 +117,13 @@ class Monitor:
         Args:
             step_log ([`MemoryStep`]): Step log to update the monitor with.
         """
-        step_duration = step_log.duration
+        step_duration = step_log.timing.duration
         self.step_durations.append(step_duration)
         console_outputs = f"[Step {len(self.step_durations)}: Duration {step_duration:.2f} seconds"
 
-        if getattr(self.tracked_model, "last_input_token_count", None) is not None:
-            self.total_input_token_count += self.tracked_model.last_input_token_count
-            self.total_output_token_count += self.tracked_model.last_output_token_count
+        if step_log.usage is not None:
+            self.total_input_token_count += step_log.usage.input_tokens
+            self.total_output_token_count += step_log.usage.output_tokens
             console_outputs += (
                 f"| Input tokens: {self.total_input_token_count:,} | Output tokens: {self.total_output_token_count:,}"
             )
