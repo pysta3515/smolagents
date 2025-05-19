@@ -60,7 +60,7 @@ class ActionStep(MemoryStep):
     observations: str | None = None
     observations_images: list["PIL.Image.Image"] | None = None
     action_output: Any = None
-    usage: TokenUsage | None = None
+    token_usage: TokenUsage | None = None
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually
@@ -68,7 +68,7 @@ class ActionStep(MemoryStep):
             "model_input_messages": self.model_input_messages,
             "tool_calls": [tc.dict() for tc in self.tool_calls] if self.tool_calls else [],
             "timing": self.timing.dict(),
-            "usage": self.usage.dict() if self.usage else None,
+            "token_usage": self.token_usage.dict() if self.token_usage else None,
             "step": self.step_number,
             "error": self.error.dict() if self.error else None,
             "model_output_message": self.model_output_message,
@@ -144,7 +144,7 @@ class PlanningStep(MemoryStep):
     model_output_message: ChatMessage
     plan: str
     timing: Timing | None = None
-    usage: TokenUsage | None = None
+    token_usage: TokenUsage | None = None
 
     def to_messages(self, summary_mode: bool = False) -> list[Message]:
         if summary_mode:

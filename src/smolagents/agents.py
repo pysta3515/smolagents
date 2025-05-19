@@ -411,7 +411,7 @@ You have been provided with these additional arguments, that you can access usin
                 assert isinstance(planning_step, PlanningStep)
                 self.memory.steps.append(planning_step)
                 if getattr(self.model, "last_input_token_count", None) is not None:
-                    planning_step.usage = TokenUsage(
+                    planning_step.token_usage = TokenUsage(
                         input_tokens=self.model.last_input_token_count,
                         output_tokens=self.model.last_output_token_count,
                     )
@@ -467,7 +467,7 @@ You have been provided with these additional arguments, that you can access usin
     def _finalize_step(self, memory_step: ActionStep):
         memory_step.timing.end_time = time.time()
         if getattr(self.model, "last_input_token_count", None) is not None:
-            memory_step.usage = TokenUsage(
+            memory_step.token_usage = TokenUsage(
                 input_tokens=self.model.last_input_token_count,
                 output_tokens=self.model.last_output_token_count,
             )
