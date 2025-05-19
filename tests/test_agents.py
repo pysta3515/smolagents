@@ -1226,7 +1226,7 @@ class TestCodeAgent:
         assert agent.description == "dummy description"
         assert agent.max_steps == 10
         assert agent.planning_interval == 2
-        assert agent.response_format is False
+        assert agent.response_format is None
         assert agent.additional_authorized_imports == ["pandas"]
         assert "pandas" in agent.authorized_imports
         assert agent.executor_type == "local"
