@@ -12,6 +12,7 @@ from smolagents.memory import (
     SystemPromptStep,
     TaskStep,
 )
+from smolagents.monitoring import Timing, TokenUsage
 
 
 class TestAgentMemory:
@@ -43,16 +44,15 @@ def test_action_step_to_messages():
         tool_calls=[
             ToolCall(id="id", name="get_weather", arguments={"location": "Paris"}),
         ],
-        start_time=0.0,
-        end_time=1.0,
+        timing=Timing(start_time=0.0, end_time=1.0),
         step_number=1,
         error=None,
-        duration=1.0,
         model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Hi"),
         model_output="Hi",
         observations="This is a nice observation",
         observations_images=["image1.png"],
         action_output="Output",
+        token_usage=TokenUsage(input_tokens=10, output_tokens=20),
     )
     messages = action_step.to_messages()
     assert len(messages) == 4
@@ -93,16 +93,15 @@ def test_action_step_to_messages_no_tool_calls_with_observations():
     action_step = ActionStep(
         model_input_messages=None,
         tool_calls=None,
-        start_time=None,
-        end_time=None,
-        step_number=None,
+        timing=Timing(start_time=0.0, end_time=1.0),
+        step_number=1,
         error=None,
-        duration=None,
         model_output_message=None,
         model_output=None,
         observations="This is an observation.",
         observations_images=None,
         action_output=None,
+        token_usage=TokenUsage(input_tokens=10, output_tokens=20),
     )
     messages = action_step.to_messages()
     assert len(messages) == 1

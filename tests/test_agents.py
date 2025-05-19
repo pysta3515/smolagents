@@ -678,8 +678,6 @@ class TestMultiStepAgent:
 
     def test_step_number(self):
         fake_model = MagicMock()
-        fake_model.last_input_token_count = 10
-        fake_model.last_output_token_count = 20
         max_steps = 2
         agent = CodeAgent(tools=[], model=fake_model, max_steps=max_steps)
         assert hasattr(agent, "step_number"), "step_number attribute should be defined"
@@ -852,7 +850,6 @@ class TestMultiStepAgent:
     def test_interrupt(self):
         fake_model = MagicMock()
         fake_model.return_value.content = "Model output."
-        fake_model.last_input_token_count = None
 
         def interrupt_callback(memory_step, agent):
             agent.interrupt()
