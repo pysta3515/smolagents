@@ -21,19 +21,21 @@ from typing import Generator
 
 from smolagents.agent_types import AgentAudio, AgentImage, AgentText
 from smolagents.agents import MultiStepAgent, PlanningStep
-from smolagents.memory import ActionStep, FinalAnswerStep, MemoryStep
+from smolagents.memory import ActionStep, FinalAnswerStep
 from smolagents.models import ChatMessageStreamDelta
 from smolagents.utils import _is_package_available
 
 
-def get_step_footnote_content(step_log: MemoryStep, step_name: str) -> str:
+def get_step_footnote_content(step_log: ActionStep | PlanningStep, step_name: str) -> str:
     """Get a footnote string for a step log with duration and token information"""
     step_footnote = f"**{step_name}**"
-    if hasattr(step_log, "input_token_count") and hasattr(step_log, "output_token_count"):
-        token_str = f" | Input tokens: {step_log.input_token_count:,} | Output tokens: {step_log.output_token_count:,}"
+    if hasattr(step_log, "token_usage"):
+        token_str = f" | Input tokens: {step_log.token_usage.input_tokens:,} | Output tokens: {step_log.token_usage.output_tokens:,}"
         step_footnote += token_str
-    if hasattr(step_log, "duration"):
-        step_duration = f" | Duration: {round(float(step_log.duration), 2)}" if step_log.duration else None
+    if hasattr(step_log, "timing"):
+        step_duration = (
+            f" | Duration: {round(float(step_log.timing.duration), 2)}" if step_log.timing.duration else None
+        )
         step_footnote += step_duration
     step_footnote_content = f"""<span style="color: #bbbbc2; font-size: 12px;">{step_footnote}</span> """
     return step_footnote_content
@@ -222,7 +224,7 @@ def _process_final_answer_step(step_log: FinalAnswerStep) -> Generator:
         )
 
 
-def pull_messages_from_step(step_log: MemoryStep, skip_model_outputs: bool = False):
+def pull_messages_from_step(step_log: ActionStep | PlanningStep | FinalAnswerStep, skip_model_outputs: bool = False):
     """Extract ChatMessage objects from agent steps with proper nesting.
 
     Args:
@@ -260,13 +262,7 @@ def stream_to_gradio(
     for step_log in agent.run(
         task, images=task_images, stream=True, reset=reset_agent_memory, additional_args=additional_args
     ):
-        # Track tokens if model provides them
-        if getattr(agent.model, "last_input_token_count", None) is not None:
-            if isinstance(step_log, (ActionStep, PlanningStep)):
-                step_log.input_token_count = agent.model.last_input_token_count
-                step_log.output_token_count = agent.model.last_output_token_count
-
-        if isinstance(step_log, MemoryStep):
+        if isinstance(step_log, ActionStep | PlanningStep | FinalAnswerStep):
             intermediate_text = ""
             for message in pull_messages_from_step(
                 step_log,

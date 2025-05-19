@@ -121,9 +121,9 @@ class Monitor:
         self.step_durations.append(step_duration)
         console_outputs = f"[Step {len(self.step_durations)}: Duration {step_duration:.2f} seconds"
 
-        if step_log.usage is not None:
-            self.total_input_token_count += step_log.usage.input_tokens
-            self.total_output_token_count += step_log.usage.output_tokens
+        if step_log.token_usage is not None:
+            self.total_input_token_count += step_log.token_usage.input_tokens
+            self.total_output_token_count += step_log.token_usage.output_tokens
             console_outputs += (
                 f"| Input tokens: {self.total_input_token_count:,} | Output tokens: {self.total_output_token_count:,}"
             )
