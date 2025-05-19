@@ -182,7 +182,7 @@ class SystemPromptStep(MemoryStep):
 
 @dataclass
 class FinalAnswerStep(MemoryStep):
-    final_answer: Any
+    output: Any
 
 
 class AgentMemory:

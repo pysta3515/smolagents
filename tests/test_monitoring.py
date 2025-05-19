@@ -20,6 +20,7 @@ import pytest
 from smolagents import (
     AgentImage,
     CodeAgent,
+    RunResult,
     ToolCallingAgent,
     stream_to_gradio,
 )
@@ -28,14 +29,11 @@ from smolagents.models import (
     ChatMessageToolCall,
     ChatMessageToolCallDefinition,
     Model,
+    TokenUsage,
 )
 
 
 class FakeLLMModel(Model):
-    def __init__(self):
-        self.last_input_token_count = 10
-        self.last_output_token_count = 20
-
     def generate(self, prompt, tools_to_call_from=None, **kwargs):
         if tools_to_call_from is not None:
             return ChatMessage(
@@ -48,6 +46,7 @@ class FakeLLMModel(Model):
                         function=ChatMessageToolCallDefinition(name="final_answer", arguments={"answer": "image"}),
                     )
                 ],
+                token_usage=TokenUsage(input_tokens=10, output_tokens=20),
             )
         else:
             return ChatMessage(
@@ -57,6 +56,7 @@ Code:
 ```py
 final_answer('This is the final answer.')
 ```""",
+                token_usage=TokenUsage(input_tokens=10, output_tokens=20),
             )
 
 
@@ -86,12 +86,12 @@ class MonitoringTester(unittest.TestCase):
 
     def test_code_agent_metrics_max_steps(self):
         class FakeLLMModelMalformedAnswer(Model):
-            def __init__(self):
-                self.last_input_token_count = 10
-                self.last_output_token_count = 20
-
             def generate(self, prompt, **kwargs):
-                return ChatMessage(role="assistant", content="Malformed answer")
+                return ChatMessage(
+                    role="assistant",
+                    content="Malformed answer",
+                    token_usage=TokenUsage(input_tokens=10, output_tokens=20),
+                )
 
         agent = CodeAgent(
             tools=[],
@@ -106,13 +106,7 @@ class MonitoringTester(unittest.TestCase):
 
     def test_code_agent_metrics_generation_error(self):
         class FakeLLMModelGenerationException(Model):
-            def __init__(self):
-                self.last_input_token_count = 10
-                self.last_output_token_count = 20
-
             def generate(self, prompt, **kwargs):
-                self.last_input_token_count = 10
-                self.last_output_token_count = 0
                 raise Exception("Cannot generate")
 
         agent = CodeAgent(
@@ -120,11 +114,9 @@ class MonitoringTester(unittest.TestCase):
             model=FakeLLMModelGenerationException(),
             max_steps=1,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(Exception) as e:
             agent.run("Fake task")
-
-        self.assertEqual(agent.monitor.total_input_token_count, 10)  # Should have done one monitoring callbacks
-        self.assertEqual(agent.monitor.total_output_token_count, 0)
+        assert "Cannot generate" in str(e.value)
 
     def test_streaming_agent_text_output(self):
         agent = CodeAgent(
@@ -187,21 +179,19 @@ class MonitoringTester(unittest.TestCase):
         self.assertEqual(final_message.role, "assistant")
         self.assertIn("Malformed call", final_message.content)
 
-    def test_run_return_full_results(self):
+    def test_run_return_full_result(self):
         agent = CodeAgent(
             tools=[],
             model=FakeLLMModel(),
             max_steps=1,
-            return_full_results=True,
+            return_full_result=True,
         )
 
         result = agent.run("Fake task")
 
-        from smolagents import RunResult
-
         self.assertIsInstance(result, RunResult)
-        self.assertEqual(result.result, "This is the final answer.")
+        self.assertEqual(result.output, "This is the final answer.")
         self.assertEqual(result.state, "success")
-        self.assertEqual(result.token_usage, {"input": 10, "output": 20})
+        self.assertEqual(result.token_usage, TokenUsage(input_tokens=10, output_tokens=20))
         self.assertIsInstance(result.messages, list)
-        self.assertGreater(result.duration, 0)
+        self.assertGreater(result.timing.duration, 0)

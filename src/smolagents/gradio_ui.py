@@ -196,7 +196,7 @@ def _process_final_answer_step(step_log: FinalAnswerStep) -> Generator:
     """
     import gradio as gr
 
-    final_answer = step_log.final_answer
+    final_answer = step_log.output
     if isinstance(final_answer, AgentText):
         yield gr.ChatMessage(
             role="assistant",
