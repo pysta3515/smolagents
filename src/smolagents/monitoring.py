@@ -92,18 +92,13 @@ class Monitor:
         self.step_durations = []
         self.tracked_model = tracked_model
         self.logger = logger
-        if getattr(self.tracked_model, "last_input_token_count", "Not found") != "Not found":
-            self.total_input_token_count = 0
-            self.total_output_token_count = 0
+        self.total_input_token_count = 0
+        self.total_output_token_count = 0
 
-    def get_total_token_counts(self) -> TokenUsage | None:
-        return (
-            TokenUsage(
-                input_tokens=self.total_input_token_count,
-                output_tokens=self.total_output_token_count,
-            )
-            if hasattr(self, "total_input_token_count")
-            else None
+    def get_total_token_counts(self) -> TokenUsage:
+        return TokenUsage(
+            input_tokens=self.total_input_token_count,
+            output_tokens=self.total_output_token_count,
         )
 
     def reset(self):

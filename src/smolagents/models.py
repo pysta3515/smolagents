@@ -368,7 +368,7 @@ class Model:
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]]] | list[ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -377,7 +377,7 @@ class Model:
         """Process the input messages and return the model's response.
 
         Parameters:
-            messages (`list[dict[str, str]]`):
+            messages (`list[dict[str, str | list[dict]]] | list[ChatMessage]`):
                 A list of message dictionaries to be processed. Each dictionary should have the structure `{"role": "user/system", "content": "message content"}`.
             stop_sequences (`List[str]`, *optional*):
                 A list of strings that will stop the generation if encountered in the model's output.
@@ -1318,12 +1318,16 @@ class InferenceClientModel(ApiModel):
                     if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    yield ChatMessageStreamDelta(
-                        content=event.choices[0].delta.content,
-                        token_usage=TokenUsage(
+                    if getattr(event, "usage", None):
+                        token_usage = TokenUsage(
                             input_tokens=event.usage.prompt_tokens,
                             output_tokens=event.usage.completion_tokens,
-                        ),
+                        )
+                    else:
+                        token_usage = None
+                    yield ChatMessageStreamDelta(
+                        content=event.choices[0].delta.content,
+                        token_usage=token_usage,
                     )
 
 

@@ -99,6 +99,11 @@ def populate_template(template: str, variables: dict[str, Any]) -> str:
         raise Exception(f"Error during jinja template rendering: {type(e).__name__}: {e}")
 
 
+@dataclass
+class FinalOutput:
+    output: Any | None
+
+
 class PlanningPromptTemplate(TypedDict):
     """
     Prompt templates for the planning step.
@@ -173,7 +178,7 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 class RunResult:
     """Holds extended information about an agent run."""
 
-    result: Any
+    output: Any | None
     token_usage: TokenUsage | None
     messages: list[dict]
     timing: Timing
@@ -367,7 +372,7 @@ You have been provided with these additional arguments, that you can access usin
         # Outputs are returned only at the end. We only look at the last step.
 
         steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
-        result = steps[-1].final_answer
+        result = steps[-1].output
 
         if self.return_full_result:
             token_usage = None
@@ -381,7 +386,7 @@ You have been provided with these additional arguments, that you can access usin
             messages = self.memory.get_full_steps()
 
             return RunResult(
-                result=result,
+                output=result,
                 token_usage=token_usage,
                 messages=messages,
                 timing=Timing(start_time=run_start_time, end_time=time.time()),
@@ -392,12 +397,14 @@ You have been provided with these additional arguments, that you can access usin
 
     def _run_stream(
         self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
-    ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep]:
+    ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep | ChatMessageStreamDelta]:
         final_answer = None
         self.step_number = 1
         while final_answer is None and self.step_number <= max_steps:
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
+
+            # Run a planning step if scheduled
             if self.planning_interval is not None and (
                 self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
             ):
@@ -408,18 +415,15 @@ You have been provided with these additional arguments, that you can access usin
                 ):
                     yield element
                     planning_step = element
-                assert isinstance(planning_step, PlanningStep)
+                assert isinstance(planning_step, PlanningStep)  # Last yielded element should be a PlanningStep
                 self.memory.steps.append(planning_step)
-                if getattr(self.model, "last_input_token_count", None) is not None:
-                    planning_step.token_usage = TokenUsage(
-                        input_tokens=self.model.last_input_token_count,
-                        output_tokens=self.model.last_output_token_count,
-                    )
                 planning_end_time = time.time()
                 planning_step.timing = Timing(
                     start_time=planning_start_time,
                     end_time=planning_end_time,
                 )
+
+            # Start action step!
             action_step_start_time = time.time()
             action_step = ActionStep(
                 step_number=self.step_number,
@@ -447,15 +451,17 @@ You have been provided with these additional arguments, that you can access usin
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
-    def _execute_step(self, memory_step: ActionStep) -> Generator[Any]:
+    def _execute_step(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | FinalOutput]:
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-        final_answer = None
         for el in self._step_stream(memory_step):
             final_answer = el
-            yield el
-        if final_answer is not None and self.final_answer_checks:
-            self._validate_final_answer(final_answer)
-        yield final_answer
+            if isinstance(el, ChatMessageStreamDelta):
+                yield el
+            elif isinstance(el, FinalOutput):
+                final_answer = el.output
+                if self.final_answer_checks:
+                    self._validate_final_answer(final_answer)
+                yield final_answer
 
     def _validate_final_answer(self, final_answer: Any):
         for check_function in self.final_answer_checks:
@@ -496,7 +502,8 @@ You have been provided with these additional arguments, that you can access usin
 
     def _generate_planning_step(
         self, task, is_first_step: bool, step: int
-    ) -> Generator[ChatMessageStreamDelta, PlanningStep]:
+    ) -> Generator[ChatMessageStreamDelta | PlanningStep]:
+        start_time = time.time()
         if is_first_step:
             input_messages = [
                 {
@@ -515,14 +522,23 @@ You have been provided with these additional arguments, that you can access usin
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 plan_message_content = ""
                 output_stream = self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"])  # type: ignore
+                input_tokens, output_tokens = 0, 0
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
                         if event.content is not None:
                             plan_message_content += event.content
                             live.update(Markdown(plan_message_content))
+                            if event.token_usage:
+                                output_tokens += event.token_usage.output_tokens
+                                input_tokens = event.token_usage.input_tokens
                         yield event
             else:
-                plan_message_content = self.model.generate(input_messages, stop_sequences=["<end_plan>"]).content
+                plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
+                plan_message_content = plan_message.content
+                input_tokens, output_tokens = (
+                    plan_message.token_usage.input_tokens,
+                    plan_message.token_usage.output_tokens,
+                )
             plan = textwrap.dedent(
                 f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
             )
@@ -561,11 +577,25 @@ You have been provided with these additional arguments, that you can access usin
             input_messages = [plan_update_pre] + memory_messages + [plan_update_post]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 plan_message_content = ""
-                for completion_delta in self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"]):  # type: ignore
-                    plan_message_content += completion_delta.content
-                    yield completion_delta
+                input_tokens, output_tokens = 0, 0
+                with Live("", console=self.logger.console, vertical_overflow="visible") as live:
+                    for event in self.model.generate_stream(
+                        input_messages,
+                        stop_sequences=["<end_plan>"],
+                    ):  # type: ignore
+                        if event.content is not None:
+                            plan_message_content += event.content
+                            live.update(Markdown(plan_message_content))
+                            output_tokens += event.token_usage.output_tokens
+                            input_tokens = event.token_usage.input_tokens
+                        yield event
             else:
-                plan_message_content = self.model.generate(input_messages, stop_sequences=["<end_plan>"]).content
+                plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
+                plan_message_content = plan_message.content
+                input_tokens, output_tokens = (
+                    plan_message.token_usage.input_tokens,
+                    plan_message.token_usage.output_tokens,
+                )
             plan = textwrap.dedent(
                 f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message_content}\n```"""
             )
@@ -575,6 +605,8 @@ You have been provided with these additional arguments, that you can access usin
             model_input_messages=input_messages,
             plan=plan,
             model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content=plan_message_content),
+            token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+            timing=Timing(start_time=start_time, end_time=time.time()),
         )
 
     @property
@@ -607,7 +639,7 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | FinalOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
@@ -709,7 +741,7 @@ You have been provided with these additional arguments, that you can access usin
         )
         result = self.run(full_task, **kwargs)
         if isinstance(result, RunResult):
-            report = result.result
+            report = result.output
         else:
             report = result
         answer = populate_template(
@@ -1105,7 +1137,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[FinalOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
@@ -1118,7 +1150,7 @@ class ToolCallingAgent(MultiStepAgent):
         memory_step.model_input_messages = input_messages
 
         try:
-            chat_message: ChatMessage = self.model(
+            chat_message: ChatMessage = self.model.generate(
                 input_messages,
                 stop_sequences=["Observation:", "Calling tools:"],
                 tools_to_call_from=list(self.tools.values()),
@@ -1179,7 +1211,7 @@ class ToolCallingAgent(MultiStepAgent):
                 )
 
             memory_step.action_output = final_answer
-            yield final_answer
+            yield FinalOutput(output=final_answer)
         else:
             if tool_arguments is None:
                 tool_arguments = {}
@@ -1201,7 +1233,7 @@ class ToolCallingAgent(MultiStepAgent):
                 level=LogLevel.INFO,
             )
             memory_step.observations = updated_information
-            yield None
+            yield FinalOutput(output=None)
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
         """Replace string values in arguments with their corresponding state values if they exist."""
@@ -1369,10 +1401,11 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[Any]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | FinalOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
-        Yields either None if the step is not final, or the final answer.
+        Yields ChatMessageStreamDelta during the run if streaming is enabled.
+        At the end, yields either None if the step is not final, or the final answer.
         """
         memory_messages = self.write_memory_to_messages()
 
@@ -1388,15 +1421,24 @@ class CodeAgent(MultiStepAgent):
                     **additional_args,
                 )
                 output_text = ""
+                input_tokens, output_tokens = 0, 0
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
                         if event.content is not None:
                             output_text += event.content
                             live.update(Markdown(output_text))
+                            if event.token_usage:
+                                output_tokens += event.token_usage.output_tokens
+                                input_tokens = event.token_usage.input_tokens
+                        assert isinstance(event, ChatMessageStreamDelta)
                         yield event
 
                 model_output = output_text
-                chat_message = ChatMessage(role="assistant", content=model_output)
+                chat_message = ChatMessage(
+                    role="assistant",
+                    content=model_output,
+                    token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+                )
                 memory_step.model_output_message = chat_message
                 model_output = chat_message.content
             else:
@@ -1419,6 +1461,7 @@ class CodeAgent(MultiStepAgent):
                 model_output += "<end_code>"
                 memory_step.model_output_message.content = model_output
 
+            memory_step.token_usage = chat_message.token_usage
             memory_step.model_output = model_output
         except Exception as e:
             raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
@@ -1480,7 +1523,7 @@ class CodeAgent(MultiStepAgent):
         ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
-        yield output if is_final_answer else None
+        yield FinalOutput(output=output if is_final_answer else None)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.

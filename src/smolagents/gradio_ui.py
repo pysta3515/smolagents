@@ -29,14 +29,11 @@ from smolagents.utils import _is_package_available
 def get_step_footnote_content(step_log: ActionStep | PlanningStep, step_name: str) -> str:
     """Get a footnote string for a step log with duration and token information"""
     step_footnote = f"**{step_name}**"
-    if hasattr(step_log, "token_usage"):
+    if getattr(step_log, "token_usage", None):
         token_str = f" | Input tokens: {step_log.token_usage.input_tokens:,} | Output tokens: {step_log.token_usage.output_tokens:,}"
         step_footnote += token_str
-    if hasattr(step_log, "timing"):
-        step_duration = (
-            f" | Duration: {round(float(step_log.timing.duration), 2)}" if step_log.timing.duration else None
-        )
-        step_footnote += step_duration
+    step_duration = f" | Duration: {round(float(step_log.timing.duration), 2)}s" if step_log.timing.duration else None
+    step_footnote += step_duration
     step_footnote_content = f"""<span style="color: #bbbbc2; font-size: 12px;">{step_footnote}</span> """
     return step_footnote_content
 
@@ -252,26 +249,27 @@ def stream_to_gradio(
     task_images: list | None = None,
     reset_agent_memory: bool = False,
     additional_args: dict | None = None,
-):
+) -> Generator:
     """Runs an agent with the given task and streams the messages from the agent as gradio ChatMessages."""
     if not _is_package_available("gradio"):
         raise ModuleNotFoundError(
             "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
         )
     intermediate_text = ""
-    for step_log in agent.run(
+    for event in agent.run(
         task, images=task_images, stream=True, reset=reset_agent_memory, additional_args=additional_args
     ):
-        if isinstance(step_log, ActionStep | PlanningStep | FinalAnswerStep):
+        if isinstance(event, ActionStep | PlanningStep | FinalAnswerStep):
             intermediate_text = ""
             for message in pull_messages_from_step(
-                step_log,
+                event,
                 # If we're streaming model outputs, no need to display them twice
                 skip_model_outputs=getattr(agent, "stream_outputs", False),
             ):
                 yield message
-        elif isinstance(step_log, ChatMessageStreamDelta):
-            intermediate_text += step_log.content or ""
+        elif isinstance(event, ChatMessageStreamDelta):
+            print(event)
+            intermediate_text += event.content or ""
             yield intermediate_text
 
 
@@ -306,19 +304,15 @@ class GradioUI:
                 if isinstance(msg, gr.ChatMessage):
                     messages.append(msg)
                 elif isinstance(msg, str):  # Then it's only a completion delta
-                    try:
-                        if messages[-1].metadata["status"] == "pending":
-                            messages[-1].content = msg
-                        else:
-                            messages.append(
-                                gr.ChatMessage(role="assistant", content=msg, metadata={"status": "pending"})
-                            )
-                    except Exception as e:
-                        raise e
+                    if messages[-1].metadata["status"] == "pending":
+                        messages[-1].content = msg
+                    else:
+                        messages.append(gr.ChatMessage(role="assistant", content=msg, metadata={"status": "pending"}))
                 yield messages
 
             yield messages
         except Exception as e:
+            raise e
             print(f"Error in interaction: {str(e)}")
             messages.append(gr.ChatMessage(role="assistant", content=f"Error: {str(e)}"))
             yield messages
