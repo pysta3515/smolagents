@@ -16,6 +16,7 @@
 # limitations under the License.
 import ast
 import base64
+import codecs
 import importlib.metadata
 import importlib.util
 import inspect
@@ -170,6 +171,55 @@ def parse_json_blob(json_blob: str) -> tuple[dict[str, str], str]:
             f"JSON blob was: {json_blob}, decoding failed on that specific part of the blob:\n"
             f"'{json_blob[place - 4 : place + 5]}'."
         )
+
+
+def parse_code_from_json_string(text: str) -> str:
+    """
+    Parser for JSON-like string to extract the 'code' field.
+    Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
+    The 'thought' field is disregarded since its not needed for action step.
+
+    Args:
+        text (`str`): The text to parse.
+
+    Returns:
+        `str`: The parsed code.
+    """
+
+    code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', text, re.DOTALL)
+    if code_match:
+        code_content = code_match.group(1)
+        code_action = _fix_code_formatting(code_content)  # Decode the raw string content
+    else:
+        raise ValueError(
+            "The JSON output does not contain a 'code' field. Make sure to include a 'code' field in the JSON output."
+        )
+
+    return code_action
+
+
+def _fix_code_formatting(text: str) -> str:
+    """
+    Extracts code from a string that might be wrapped in markdown code blocks.
+
+    Args:
+        text (`str`): The text to parse.
+
+    Returns:
+        `str`: The parsed code.
+    """
+    # remove escape characters
+    try:
+        text = codecs.decode(text, "unicode_escape")
+    except Exception:
+        text = text.replace("\\", "")
+
+    # extract code from possible markdown code blocks
+    pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
+    matches = re.findall(pattern, text, re.DOTALL)
+    if matches:
+        text = "\n\n".join(match.strip() for match in matches)
+    return text
 
 
 def parse_code_blobs(text: str) -> str:

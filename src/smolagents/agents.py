@@ -14,7 +14,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import codecs
 import importlib
 import inspect
 import json
@@ -77,6 +76,7 @@ from .utils import (
     is_valid_name,
     make_init_file,
     parse_code_blobs,
+    parse_code_from_json_string,
     truncate_content,
 )
 
@@ -1338,16 +1338,6 @@ class CodeAgent(MultiStepAgent):
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields either None if the step is not final, or the final answer.
         """
-        if self.response_format:
-            yield from self._json_step(memory_step)
-        else:
-            yield from self._step(memory_step)
-
-    def _step(self, memory_step: ActionStep) -> Generator[Any]:
-        """
-        Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
-        Yields either None if the step is not final, or the final answer.
-        """
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()
@@ -1399,7 +1389,11 @@ class CodeAgent(MultiStepAgent):
 
         ### Parse output ###
         try:
-            code_action = fix_final_answer_code(parse_code_blobs(model_output))
+            if self.response_format is not None:
+                code_action = parse_code_from_json_string(model_output)
+            else:
+                code_action = parse_code_blobs(model_output)
+            code_action = fix_final_answer_code(code_action)
         except Exception as e:
             error_msg = f"Error in code parsing:\n{e}\nMake sure to provide correct code blobs."
             raise AgentParsingError(error_msg, self.logger)
@@ -1455,156 +1449,6 @@ class CodeAgent(MultiStepAgent):
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
         yield output if is_final_answer else None
-
-    def _json_step(self, memory_step: ActionStep) -> Generator[Any]:
-        """
-        Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
-        Yields either None if the step is not final, or the final answer.
-        """
-        memory_messages = self.write_memory_to_messages()
-
-        input_messages = memory_messages.copy()
-        ### Generate model output ###
-        memory_step.model_input_messages = input_messages
-        try:
-            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
-            if self.stream_outputs:
-                output_stream = self.model.generate_stream(
-                    input_messages,
-                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
-                    **additional_args,
-                )
-                output_text = ""
-                with Live("", console=self.logger.console, vertical_overflow="visible") as live:
-                    for event in output_stream:
-                        if event.content is not None:
-                            output_text += event.content
-                            live.update(Markdown(output_text))
-                        yield event
-
-                model_output = output_text
-                chat_message = ChatMessage(role="assistant", content=model_output)
-                memory_step.model_output_message = chat_message
-                model_output = chat_message.content
-            else:
-                chat_message: ChatMessage = self.model.generate(
-                    input_messages,
-                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
-                    **additional_args,
-                )
-                memory_step.model_output_message = chat_message
-                model_output = chat_message.content
-                self.logger.log_markdown(
-                    content=f"```json\n{model_output}\n```",
-                    title="Output message of the LLM:",
-                    level=LogLevel.DEBUG,
-                )
-
-            memory_step.model_output = model_output
-        except Exception as e:
-            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
-
-        ### Parse output ###
-        code_action = self._parse_json_from_string(model_output)
-
-        if code_action is not None:
-            code_action = fix_final_answer_code(code_action)
-        else:
-            raise AgentParsingError(
-                f"Code could not be parsed from your output. Make sure to include a 'code' field in your output.\\nPrevious output:\\n{model_output}",
-                self.logger,
-            )
-
-        memory_step.tool_calls = [
-            ToolCall(
-                name="python_interpreter",
-                arguments=code_action,
-                id=f"call_{len(self.memory.steps)}",
-            )
-        ]
-
-        ### Execute action ###
-        self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
-        is_final_answer = False
-        try:
-            output, execution_logs, is_final_answer = self.python_executor(code_action)
-            execution_outputs_console = []
-            if len(execution_logs) > 0:
-                execution_outputs_console += [
-                    Text("Execution logs:", style="bold"),
-                    Text(execution_logs),
-                ]
-            observation = "Execution logs:\n" + execution_logs
-        except Exception as e:
-            if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
-                execution_logs = str(self.python_executor.state["_print_outputs"])
-                if len(execution_logs) > 0:
-                    execution_outputs_console = [
-                        Text("Execution logs:", style="bold"),
-                        Text(execution_logs),
-                    ]
-                    memory_step.observations = "Execution logs:\n" + execution_logs
-                    self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
-            error_msg = str(e)
-            if "Import of " in error_msg and " is not allowed" in error_msg:
-                self.logger.log(
-                    "[bold red]Warning to user: Code execution failed due to an unauthorized import - Consider passing said import under `additional_authorized_imports` when initializing your CodeAgent.",
-                    level=LogLevel.INFO,
-                )
-            raise AgentExecutionError(error_msg, self.logger)
-
-        truncated_output = truncate_content(str(output))
-        observation += "Last output from code snippet:\n" + truncated_output
-        memory_step.observations = observation
-
-        execution_outputs_console += [
-            Text(
-                f"{('Out - Final answer' if is_final_answer else 'Out')}: {truncated_output}",
-                style=(f"bold {YELLOW_HEX}" if is_final_answer else ""),
-            ),
-        ]
-        self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
-        memory_step.action_output = output
-        yield output if is_final_answer else None
-
-    def _parse_json_from_string(self, model_output: str) -> str:
-        """
-        Parser for JSON-like string to extract the 'code' field.
-        Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
-        The 'thought' field is disregarded since its not needed for action step.
-        """
-        code_action = None
-        try:
-            code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', model_output, re.DOTALL)
-            if code_match:
-                code_content = code_match.group(1)
-                code_action = self._fix_code_formatting(code_content)  # Decode the raw string content
-            else:
-                self.logger.log("Fallback: 'code' field not found using regex.", level=LogLevel.WARNING)
-        except Exception as e:
-            self.logger.log(f"Fallback: Error extracting 'code': {e}", level=LogLevel.DEBUG)
-
-        return code_action
-
-    def _fix_code_formatting(self, code_content: str) -> str:
-        """
-        Extracts code from a string that might be wrapped in markdown code blocks.
-        Handles multiple blocks by joining their contents.
-        Assumes code_content is an already Python-string-unescaped string.
-        """
-        # remove escape characters
-        try:
-            code_content = codecs.decode(code_content, "unicode_escape")
-        except Exception as e:
-            self.logger.log(f"Fallback: Error decoding 'code': {e}", level=LogLevel.DEBUG)
-            code_content = code_content.replace("\\", "")
-
-        # extract code from possible markdown code blocks
-        pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
-        matches = re.findall(pattern, code_content, re.DOTALL)
-        if matches:
-            code_content = "\n\n".join(match.strip() for match in matches)
-        return code_content
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.
