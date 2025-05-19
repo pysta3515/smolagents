@@ -222,7 +222,7 @@ def _process_final_answer_step(step_log: FinalAnswerStep) -> Generator:
 
 
 def pull_messages_from_step(step_log: ActionStep | PlanningStep | FinalAnswerStep, skip_model_outputs: bool = False):
-    """Extract ChatMessage objects from agent steps with proper nesting.
+    """Extract Gradio ChatMessage objects from agent steps with proper nesting.
 
     Args:
         step_log: The step log to display as gr.ChatMessage objects.
@@ -256,6 +256,8 @@ def stream_to_gradio(
             "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
         )
     intermediate_text = ""
+    import time
+
     for event in agent.run(
         task, images=task_images, stream=True, reset=reset_agent_memory, additional_args=additional_args
     ):
@@ -268,7 +270,7 @@ def stream_to_gradio(
             ):
                 yield message
         elif isinstance(event, ChatMessageStreamDelta):
-            print(event)
+            time.sleep(0.1)
             intermediate_text += event.content or ""
             yield intermediate_text
 
@@ -302,8 +304,10 @@ class GradioUI:
 
             for msg in stream_to_gradio(session_state["agent"], task=prompt, reset_agent_memory=False):
                 if isinstance(msg, gr.ChatMessage):
+                    messages[-1].metadata["status"] = "done"
                     messages.append(msg)
                 elif isinstance(msg, str):  # Then it's only a completion delta
+                    msg = msg.replace("<", r"\<").replace(">", r"\>")  # HTML tags seem to break Gradio Chatbot
                     if messages[-1].metadata["status"] == "pending":
                         messages[-1].content = msg
                     else:
