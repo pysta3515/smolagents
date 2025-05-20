@@ -71,7 +71,7 @@ class ActionStep(MemoryStep):
             "token_usage": asdict(self.token_usage) if self.token_usage else None,
             "step": self.step_number,
             "error": self.error.dict() if self.error else None,
-            "model_output_message": self.model_output_message.dict(),
+            "model_output_message": self.model_output_message.dict() if self.model_output_message else None,
             "model_output": self.model_output,
             "observations": self.observations,
             "action_output": make_json_serializable(self.action_output),
