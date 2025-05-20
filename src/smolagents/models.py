@@ -930,6 +930,8 @@ class TransformersModel(Model):
 
         # Generate with streaming
         for new_text in self.streamer:
+            self._last_input_token_count = count_prompt_tokens
+            self._last_output_token_count = 1
             yield ChatMessageStreamDelta(
                 content=new_text,
                 tool_calls=None,
@@ -1093,11 +1095,17 @@ class LiteLLMModel(ApiModel):
                 else:
                     yield ChatMessageStreamDelta(
                         content=event.choices[0].delta.content,
-                        token_usage=TokenUsage(
-                            input_tokens=event.usage.prompt_tokens,
-                            output_tokens=event.usage.completion_tokens,
-                        ),
                     )
+            if getattr(event, "usage", None):
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
 
 class LiteLLMRouterModel(LiteLLMModel):
@@ -1343,24 +1351,24 @@ class InferenceClientModel(ApiModel):
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
-            if getattr(event, "usage", None):
-                print("EV:", event)
             if event.choices:
                 if event.choices[0].delta is None:
                     if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    if getattr(event, "usage", None):
-                        token_usage = TokenUsage(
-                            input_tokens=event.usage.prompt_tokens,
-                            output_tokens=event.usage.completion_tokens,
-                        )
-                    else:
-                        token_usage = None
                     yield ChatMessageStreamDelta(
                         content=event.choices[0].delta.content,
-                        token_usage=token_usage,
                     )
+            if getattr(event, "usage", None):
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
 
 class HfApiModel(InferenceClientModel):
@@ -1461,13 +1469,17 @@ class OpenAIServerModel(ApiModel):
                     if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    yield ChatMessageStreamDelta(
-                        content=event.choices[0].delta.content,
-                        token_usage=TokenUsage(
-                            input_tokens=event.usage.prompt_tokens,
-                            output_tokens=event.usage.completion_tokens,
-                        ),
-                    )
+                    yield ChatMessageStreamDelta(content=event.choices[0].delta.content)
+            if event.usage:
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
     def generate(
         self,
