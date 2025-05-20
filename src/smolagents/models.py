@@ -1339,6 +1339,8 @@ class InferenceClientModel(ApiModel):
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
+            if getattr(event, "usage", None):
+                print("EV:", event)
             if event.choices:
                 if event.choices[0].delta is None:
                     if not getattr(event.choices[0], "finish_reason", None):

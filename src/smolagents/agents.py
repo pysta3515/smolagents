@@ -380,11 +380,25 @@ You have been provided with these additional arguments, that you can access usin
         # Outputs are returned only at the end. We only look at the last step.
 
         steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
-        result = steps[-1].output
+        assert isinstance(steps[-1], FinalAnswerStep)
+        output = steps[-1].output
 
         if self.return_full_result:
-            token_usage = None
-            token_usage = self.monitor.get_total_token_counts()
+            total_input_tokens = 0
+            total_output_tokens = 0
+            correct_token_usage = True
+            for step in self.memory.steps:
+                if isinstance(step, (ActionStep, PlanningStep)):
+                    if step.token_usage is None:
+                        correct_token_usage = False
+                        break
+                    else:
+                        total_input_tokens += step.token_usage.input_tokens
+                        total_output_tokens += step.token_usage.output_tokens
+            if correct_token_usage:
+                token_usage = TokenUsage(input_tokens=total_input_tokens, output_tokens=total_output_tokens)
+            else:
+                token_usage = None
 
             if self.memory.steps and isinstance(getattr(self.memory.steps[-1], "error", None), AgentMaxStepsError):
                 state = "max_steps_error"
@@ -394,14 +408,14 @@ You have been provided with these additional arguments, that you can access usin
             messages = self.memory.get_full_steps()
 
             return RunResult(
-                output=result,
+                output=output,
                 token_usage=token_usage,
                 messages=messages,
                 timing=Timing(start_time=run_start_time, end_time=time.time()),
                 state=state,
             )
 
-        return result
+        return output
 
     def _run_stream(
         self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
@@ -586,8 +600,9 @@ You have been provided with these additional arguments, that you can access usin
                         if event.content is not None:
                             plan_message_content += event.content
                             live.update(Markdown(plan_message_content))
-                            output_tokens += event.token_usage.output_tokens
-                            input_tokens = event.token_usage.input_tokens
+                            if event.token_usage:
+                                output_tokens += event.token_usage.output_tokens
+                                input_tokens = event.token_usage.input_tokens
                         yield event
             else:
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])

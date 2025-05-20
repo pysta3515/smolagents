@@ -312,25 +312,32 @@ class TestPullMessagesFromStep:
             assert len(image_messages) == 2
             assert "path/to/image.png" in str(image_messages[0])
 
-    @pytest.mark.parametrize("skip_model_outputs, expected_messages_length", [(False, 4), (True, 2)])
-    def test_planning_step(self, skip_model_outputs, expected_messages_length):
+    @pytest.mark.parametrize(
+        "skip_model_outputs, expected_messages_length, token_usage",
+        [(False, 4, TokenUsage(input_tokens=80, output_tokens=30)), (True, 2, None)],
+    )
+    def test_planning_step(self, skip_model_outputs, expected_messages_length, token_usage):
         """Test PlanningStep processing."""
         step = PlanningStep(
             plan="1. First step\n2. Second step",
             model_input_messages=Mock(),
             model_output_message=Mock(),
-            token_usage=TokenUsage(input_tokens=10, output_tokens=20),
+            token_usage=token_usage,
+            timing=Timing(start_time=1.0, end_time=2.0),
         )
         messages = list(pull_messages_from_step(step, skip_model_outputs=skip_model_outputs))
         assert len(messages) == expected_messages_length  # [header, plan,] footnote, divider
         expected_contents = [
             "**Planning step**",
             "1. First step\n2. Second step",
-            "Input tokens: 80 | Output tokens: 30",
+            "Input tokens: 80 | Output tokens: 30" if token_usage else "",
             "-----",
         ]
         for message, expected_content in zip(messages, expected_contents[-expected_messages_length:]):
             assert expected_content in message.content
+
+        if not token_usage:
+            assert "Input tokens: 80 | Output tokens: 30" not in message.content
 
     @pytest.mark.parametrize(
         "answer_type, answer_value, expected_content",

@@ -143,7 +143,7 @@ class PlanningStep(MemoryStep):
     model_input_messages: list[Message]
     model_output_message: ChatMessage
     plan: str
-    timing: Timing | None = None
+    timing: Timing
     token_usage: TokenUsage | None = None
 
     def to_messages(self, summary_mode: bool = False) -> list[Message]:

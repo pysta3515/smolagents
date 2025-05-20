@@ -34,6 +34,9 @@ from smolagents.models import (
 
 
 class FakeLLMModel(Model):
+    def __init__(self, give_token_usage: bool = True):
+        self.give_token_usage = give_token_usage
+
     def generate(self, prompt, tools_to_call_from=None, **kwargs):
         if tools_to_call_from is not None:
             return ChatMessage(
@@ -46,7 +49,7 @@ class FakeLLMModel(Model):
                         function=ChatMessageToolCallDefinition(name="final_answer", arguments={"answer": "image"}),
                     )
                 ],
-                token_usage=TokenUsage(input_tokens=10, output_tokens=20),
+                token_usage=TokenUsage(input_tokens=10, output_tokens=20) if self.give_token_usage else None,
             )
         else:
             return ChatMessage(
@@ -56,7 +59,7 @@ Code:
 ```py
 final_answer('This is the final answer.')
 ```""",
-                token_usage=TokenUsage(input_tokens=10, output_tokens=20),
+                token_usage=TokenUsage(input_tokens=10, output_tokens=20) if self.give_token_usage else None,
             )
 
 
@@ -193,5 +196,58 @@ class MonitoringTester(unittest.TestCase):
         self.assertEqual(result.output, "This is the final answer.")
         self.assertEqual(result.state, "success")
         self.assertEqual(result.token_usage, TokenUsage(input_tokens=10, output_tokens=20))
+        self.assertIsInstance(result.messages, list)
+        self.assertGreater(result.timing.duration, 0)
+
+        agent = ToolCallingAgent(
+            tools=[],
+            model=FakeLLMModel(),
+            max_steps=1,
+            return_full_result=True,
+        )
+
+        result = agent.run("Fake task")
+
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.output, "image")
+        self.assertEqual(result.state, "success")
+        self.assertEqual(result.token_usage, TokenUsage(input_tokens=10, output_tokens=20))
+        self.assertIsInstance(result.messages, list)
+        self.assertGreater(result.timing.duration, 0)
+
+        # Below 2 lines should be removed when the attributes are removed
+        assert agent.monitor.total_input_token_count == 10
+        assert agent.monitor.total_output_token_count == 20
+
+    def test_run_result_no_token_usage(self):
+        agent = CodeAgent(
+            tools=[],
+            model=FakeLLMModel(give_token_usage=False),
+            max_steps=1,
+            return_full_result=True,
+        )
+
+        result = agent.run("Fake task")
+
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.output, "This is the final answer.")
+        self.assertEqual(result.state, "success")
+        self.assertIsNone(result.token_usage)
+        self.assertIsInstance(result.messages, list)
+        self.assertGreater(result.timing.duration, 0)
+
+        agent = ToolCallingAgent(
+            tools=[],
+            model=FakeLLMModel(give_token_usage=False),
+            max_steps=1,
+            return_full_result=True,
+        )
+
+        result = agent.run("Fake task")
+
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.output, "image")
+        self.assertEqual(result.state, "success")
+        self.assertIsNone(result.token_usage)
         self.assertIsInstance(result.messages, list)
         self.assertGreater(result.timing.duration, 0)

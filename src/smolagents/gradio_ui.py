@@ -29,11 +29,9 @@ from smolagents.utils import _is_package_available
 def get_step_footnote_content(step_log: ActionStep | PlanningStep, step_name: str) -> str:
     """Get a footnote string for a step log with duration and token information"""
     step_footnote = f"**{step_name}**"
-    if getattr(step_log, "token_usage", None):
-        token_str = f" | Input tokens: {step_log.token_usage.input_tokens:,} | Output tokens: {step_log.token_usage.output_tokens:,}"
-        step_footnote += token_str
-    step_duration = f" | Duration: {round(float(step_log.timing.duration), 2)}s" if step_log.timing.duration else None
-    step_footnote += step_duration
+    if step_log.token_usage is not None:
+        step_footnote += f" | Input tokens: {step_log.token_usage.input_tokens:,} | Output tokens: {step_log.token_usage.output_tokens:,}"
+    step_footnote += f" | Duration: {round(float(step_log.timing.duration), 2)}s" if step_log.timing.duration else ""
     step_footnote_content = f"""<span style="color: #bbbbc2; font-size: 12px;">{step_footnote}</span> """
     return step_footnote_content
 
@@ -314,9 +312,8 @@ class GradioUI:
 
             yield messages
         except Exception as e:
-            print(f"Error in interaction: {str(e)}")
-            messages.append(gr.ChatMessage(role="assistant", content=f"Error: {str(e)}"))
             yield messages
+            raise gr.Error(f"Error in interaction: {str(e)}")
 
     def upload_file(self, file, file_uploads_log, allowed_file_types=None):
         """
