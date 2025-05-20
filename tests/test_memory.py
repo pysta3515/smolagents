@@ -115,6 +115,7 @@ def test_planning_step_to_messages():
         model_input_messages=[Message(role=MessageRole.USER, content="Hello")],
         model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Plan"),
         plan="This is a plan.",
+        timing=Timing(start_time=0.0, end_time=1.0),
     )
     messages = planning_step.to_messages(summary_mode=False)
     assert len(messages) == 2
