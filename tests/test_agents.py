@@ -678,6 +678,13 @@ class TestMultiStepAgent:
 
     def test_step_number(self):
         fake_model = MagicMock()
+        fake_model.generate.return_value = ChatMessage(
+            role="assistant",
+            content="Model output.",
+            tool_calls=None,
+            raw="Model output.",
+            token_usage=None,
+        )
         max_steps = 2
         agent = CodeAgent(tools=[], model=fake_model, max_steps=max_steps)
         assert hasattr(agent, "step_number"), "step_number attribute should be defined"
@@ -810,13 +817,19 @@ class TestMultiStepAgent:
     )
     def test_provide_final_answer(self, images, expected_messages_list):
         fake_model = MagicMock()
-        fake_model.return_value.content = "Final answer."
+        fake_model.generate.return_value = ChatMessage(
+            role="assistant",
+            content="Final answer.",
+            tool_calls=None,
+            raw="Final answer.",
+            token_usage=None,
+        )
         agent = CodeAgent(
             tools=[],
             model=fake_model,
         )
         task = "Test task"
-        final_answer = agent.provide_final_answer(task, images=images)
+        final_answer = agent.provide_final_answer(task, images=images).content
         expected_message_texts = {
             "FINAL_ANSWER_SYSTEM_PROMPT": agent.prompt_templates["final_answer"]["pre_messages"],
             "FINAL_ANSWER_USER_PROMPT": populate_template(
@@ -830,8 +843,8 @@ class TestMultiStepAgent:
                         expected_content["text"] = expected_message_texts[expected_content["text"]]
         assert final_answer == "Final answer."
         # Test calls to model
-        assert len(fake_model.call_args_list) == 1
-        for call_args, expected_messages in zip(fake_model.call_args_list, expected_messages_list):
+        assert len(fake_model.generate.call_args_list) == 1
+        for call_args, expected_messages in zip(fake_model.generate.call_args_list, expected_messages_list):
             assert len(call_args.args) == 1
             messages = call_args.args[0]
             assert isinstance(messages, list)
@@ -849,7 +862,13 @@ class TestMultiStepAgent:
 
     def test_interrupt(self):
         fake_model = MagicMock()
-        fake_model.return_value.content = "Model output."
+        fake_model.generate.return_value = ChatMessage(
+            role="assistant",
+            content="Model output.",
+            tool_calls=None,
+            raw="Model output.",
+            token_usage=None,
+        )
 
         def interrupt_callback(memory_step, agent):
             agent.interrupt()
