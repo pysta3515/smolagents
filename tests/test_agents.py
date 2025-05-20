@@ -571,12 +571,11 @@ nested_answer()
         assert agent.memory.steps[0].task == task
         assert agent.memory.steps[1].tool_calls[0].name == "weather_api"
         step_memory_dict = agent.memory.get_succinct_steps()[1]
-        assert step_memory_dict["model_output_message"].tool_calls[0].function.name == "weather_api"
-        assert step_memory_dict["model_output_message"].raw["completion_kwargs"]["max_new_tokens"] == 100
-        assert step_memory_dict["model_output_message"].tool_calls[0].function.name == "weather_api"
+        assert step_memory_dict["model_output_message"]["tool_calls"][0]["function"]["name"] == "weather_api"
+        assert step_memory_dict["model_output_message"]["raw"]["completion_kwargs"]["max_new_tokens"] == 100
         assert "model_input_messages" in agent.memory.get_full_steps()[1]
-        assert step_memory_dict["model_output_message"].token_usage.total_tokens > 100
-        assert step_memory_dict["model_output_message"].timing.duration > 0.1
+        assert step_memory_dict["token_usage"]["total_tokens"] > 100
+        assert step_memory_dict["timing"]["duration"] > 0.1
 
     def test_final_answer_checks(self):
         def check_always_fails(final_answer, agent_memory):
