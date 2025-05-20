@@ -67,24 +67,10 @@ class Timing:
 
     start_time: float
     end_time: float | None = None
-
-    def dict(self):
-        return {
-            "start_time": self.start_time,
-            "end_time": self.end_time,
-            "duration": self.duration,
-        }
-
-    @property
-    def duration(self):
-        if self.end_time is None:
-            return None
-        return self.end_time - self.start_time
-
-    def __str__(self):
-        attributes = vars(self).copy()
-        attributes["duration"] = self.duration  # This makes sure the duration is also printed
-        return f"Timing({', '.join(f'{key}={value}' for key, value in attributes.items())})"
+    duration : float | None = field(init=False)
+    
+    def __post_init__(self):
+        self.duration = self.end_time - self.start_time if self.end_time else None
 
 
 class Monitor:
