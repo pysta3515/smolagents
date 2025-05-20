@@ -41,10 +41,15 @@ class TokenUsage:
 
     input_tokens: int
     output_tokens: int
-    total_tokens: int = field(init=False)
-    
-    def __post_init__(self):
-        self.total_tokens = self.input_tokens + self.output_tokens
+
+    @property
+    def total_tokens(self):
+        return self.input_tokens + self.output_tokens
+
+    def __str__(self):
+        attributes = vars(self).copy()
+        attributes["total_tokens"] = self.total_tokens  # This makes sure the total tokens are also printed
+        return f"TokenUsage({', '.join(f'{key}={value}' for key, value in attributes.items())})"
 
 
 @dataclass
@@ -55,10 +60,17 @@ class Timing:
 
     start_time: float
     end_time: float | None = None
-    duration : float | None = field(init=False)
-    
-    def __post_init__(self):
-        self.duration = self.end_time - self.start_time if self.end_time else None
+
+    @property
+    def duration(self):
+        if self.end_time is None:
+            return None
+        return self.end_time - self.start_time
+
+    def __str__(self):
+        attributes = vars(self).copy()
+        attributes["duration"] = self.duration  # This makes sure the duration is also printed
+        return f"Timing({', '.join(f'{key}={value}' for key, value in attributes.items())})"
 
 
 class Monitor:

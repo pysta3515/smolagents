@@ -325,8 +325,10 @@ class Model:
 
     @property
     def last_output_token_count(self) -> int | None:
-        logger.warning(
-            "The last_output_token_count attribute is deprecated and will be removed in a future version.",
+        warnings.warn(
+            "Attribute last_output_token_count is deprecated and will be removed in version 1.20. "
+            "Please use TokenUsage.output_tokens instead.",
+            FutureWarning,
         )
         return self._last_output_token_count
 
