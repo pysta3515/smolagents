@@ -310,7 +310,23 @@ class Model:
         self.tool_name_key = tool_name_key
         self.tool_arguments_key = tool_arguments_key
         self.kwargs = kwargs
+        self._last_input_token_count: int | None = None
+        self._last_output_token_count: int | None = None
         self.model_id: str | None = model_id
+
+    @property
+    def last_input_token_count(self) -> int | None:
+        logger.warning(
+            "The last_input_token_count attribute is deprecated and will be removed in a future version.",
+        )
+        return self._last_input_token_count
+
+    @property
+    def last_output_token_count(self) -> int | None:
+        logger.warning(
+            "The last_output_token_count attribute is deprecated and will be removed in a future version.",
+        )
+        return self._last_output_token_count
 
     def _prepare_completion_kwargs(
         self,
@@ -368,7 +384,7 @@ class Model:
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]] | list[ChatMessage],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -496,7 +512,7 @@ class VLLMModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -542,6 +558,8 @@ class VLLMModel(Model):
             sampling_params=sampling_params,
         )
         output_text = out[0].outputs[0].text
+        self._last_input_token_count = len(out[0].prompt_token_ids)
+        self._last_output_token_count = len(out[0].outputs[0].token_ids)
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
@@ -617,7 +635,7 @@ class MLXModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -650,6 +668,8 @@ class MLXModel(Model):
                 text = text[:stop_index]
                 break
 
+        self._last_input_token_count = len(prompt_ids)
+        self._last_output_token_count = output_tokens
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=text,
@@ -843,7 +863,7 @@ class TransformersModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -869,6 +889,8 @@ class TransformersModel(Model):
         if stop_sequences is not None:
             output_text = remove_stop_sequences(output_text, stop_sequences)
 
+        self._last_input_token_count = count_prompt_tokens
+        self._last_output_token_count = len(generated_tokens)
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
@@ -1005,7 +1027,7 @@ class LiteLLMModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1026,6 +1048,8 @@ class LiteLLMModel(ApiModel):
 
         response = self.client.completion(**completion_kwargs)
 
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
@@ -1264,7 +1288,7 @@ class InferenceClientModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1281,6 +1305,8 @@ class InferenceClientModel(ApiModel):
         )
         response = self.client.chat_completion(**completion_kwargs)
 
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
         return ChatMessage.from_dict(
             asdict(response.choices[0].message),
             raw=response,
@@ -1439,7 +1465,7 @@ class OpenAIServerModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1457,6 +1483,8 @@ class OpenAIServerModel(ApiModel):
         )
         response = self.client.chat.completions.create(**completion_kwargs)
 
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
@@ -1668,7 +1696,7 @@ class AmazonBedrockServerModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         grammar: str | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1687,6 +1715,9 @@ class AmazonBedrockServerModel(ApiModel):
 
         # Get first message
         response["output"]["message"]["content"] = response["output"]["message"]["content"][0]["text"]
+
+        self._last_input_token_count = response["usage"]["inputTokens"]
+        self._last_output_token_count = response["usage"]["outputTokens"]
         return ChatMessage.from_dict(
             response["output"]["message"],
             raw=response,

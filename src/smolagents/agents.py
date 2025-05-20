@@ -27,7 +27,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 import jinja2
 import yaml
@@ -176,13 +176,21 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 
 @dataclass
 class RunResult:
-    """Holds extended information about an agent run."""
+    """Holds extended information about an agent run.
+
+    Attributes:
+        output (Any | None): The final output of the agent run, if available.
+        state (Literal["success", "max_steps_error"]): The final state of the agent after the run.
+        messages (list[dict]): The agent's memory, as a list of messages.
+        token_usage (TokenUsage | None): Count of tokens used during the run.
+        timing (Timing): Timing details of the agent run: start time, end time, duration.
+    """
 
     output: Any | None
-    token_usage: TokenUsage | None
+    state: Literal["success", "max_steps_error"]
     messages: list[dict]
+    token_usage: TokenUsage | None
     timing: Timing
-    state: str
 
 
 class MultiStepAgent(ABC):
