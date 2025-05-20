@@ -67,8 +67,8 @@ class ActionStep(MemoryStep):
         return {
             "model_input_messages": self.model_input_messages,
             "tool_calls": [tc.dict() for tc in self.tool_calls] if self.tool_calls else [],
-            "timing": self.timing.dict(),
-            "token_usage": self.token_usage.dict() if self.token_usage else None,
+            "timing": asdict(self.timing),
+            "token_usage": asdict(self.token_usage) if self.token_usage else None,
             "step": self.step_number,
             "error": self.error.dict() if self.error else None,
             "model_output_message": self.model_output_message,
