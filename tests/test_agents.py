@@ -1218,8 +1218,13 @@ class TestCodeAgent:
 
     def test_local_python_executor_with_custom_functions(self):
         model = MagicMock()
-        model.last_input_token_count = 10
-        model.last_output_token_count = 5
+        model.generate.return_value = ChatMessage(
+            role="assistant",
+            content="",
+            tool_calls=None,
+            raw="",
+            token_usage=None,
+        )
         agent = CodeAgent(tools=[], model=model, executor_kwargs={"additional_functions": {"open": open}})
         agent.run("Test run")
         assert "open" in agent.python_executor.static_tools
