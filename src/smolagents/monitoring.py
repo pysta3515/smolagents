@@ -41,22 +41,10 @@ class TokenUsage:
 
     input_tokens: int
     output_tokens: int
-
-    def dict(self):
-        return {
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "total_tokens": self.total_tokens,
-        }
-
-    @property
-    def total_tokens(self):
-        return self.input_tokens + self.output_tokens
-
-    def __str__(self):
-        attributes = vars(self).copy()
-        attributes["total_tokens"] = self.total_tokens  # This makes sure the total tokens are also printed
-        return f"TokenUsage({', '.join(f'{key}={value}' for key, value in attributes.items())})"
+    total_tokens: int = field(init=False)
+    
+    def __post_init__(self):
+        self.total_tokens = self.input_tokens + self.output_tokens
 
 
 @dataclass
