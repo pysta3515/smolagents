@@ -60,6 +60,13 @@ class Timing:
     def duration(self):
         return None if self.end_time is None else self.end_time - self.start_time
 
+    def dict(self):
+        return {
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": self.duration,
+        }
+
     def __repr__(self) -> str:
         return f"Timing(start_time={self.start_time}, end_time={self.end_time}, duration={self.duration})"
 

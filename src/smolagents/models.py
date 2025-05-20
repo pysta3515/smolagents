@@ -124,7 +124,7 @@ class ChatMessage:
         )
 
     def dict(self):
-        return json.dumps(get_dict_from_nested_dataclasses(self))
+        return get_dict_from_nested_dataclasses(self)
 
     @classmethod
     def from_hf_api(cls, message: "ChatCompletionOutputMessage", raw) -> "ChatMessage":
