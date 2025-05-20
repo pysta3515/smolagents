@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 
 from rich import box
@@ -41,15 +41,10 @@ class TokenUsage:
 
     input_tokens: int
     output_tokens: int
+    total_tokens: int = field(init=False)
 
-    @property
-    def total_tokens(self):
-        return self.input_tokens + self.output_tokens
-
-    def __str__(self):
-        attributes = vars(self).copy()
-        attributes["total_tokens"] = self.total_tokens  # This makes sure the total tokens are also printed
-        return f"TokenUsage({', '.join(f'{key}={value}' for key, value in attributes.items())})"
+    def __post_init__(self):
+        self.total_tokens = self.input_tokens + self.output_tokens
 
 
 @dataclass
@@ -63,14 +58,10 @@ class Timing:
 
     @property
     def duration(self):
-        if self.end_time is None:
-            return None
-        return self.end_time - self.start_time
+        return None if self.end_time is None else self.end_time - self.start_time
 
-    def __str__(self):
-        attributes = vars(self).copy()
-        attributes["duration"] = self.duration  # This makes sure the duration is also printed
-        return f"Timing({', '.join(f'{key}={value}' for key, value in attributes.items())})"
+    def __repr__(self) -> str:
+        return f"Timing(start_time={self.start_time}, end_time={self.end_time}, duration={self.duration})"
 
 
 class Monitor:
