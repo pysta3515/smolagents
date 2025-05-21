@@ -22,6 +22,7 @@ import re
 import tempfile
 import textwrap
 import time
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from logging import getLogger
@@ -56,7 +57,14 @@ from .memory import (
     TaskStep,
     ToolCall,
 )
-from .models import ChatMessage, ChatMessageStreamDelta, MessageRole, Model, parse_json_if_needed
+from .models import (
+    CODEAGENT_RESPONSE_FORMAT,
+    ChatMessage,
+    ChatMessageStreamDelta,
+    MessageRole,
+    Model,
+    parse_json_if_needed,
+)
 from .monitoring import (
     YELLOW_HEX,
     AgentLogger,
@@ -167,34 +175,6 @@ EMPTY_PROMPT_TEMPLATES = PromptTemplates(
 )
 
 
-# OpenAI compatible JSON response format
-DEFAULT_CODEAGENT_JSON_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "schema": {
-            "additionalProperties": False,
-            "properties": {
-                "thought": {
-                    "description": "A free form text description of the thought process.",
-                    "title": "Thought",
-                    "type": "string",
-                },
-                "code": {
-                    "description": "Valid Python code snippet implementing the thought.",
-                    "title": "Code",
-                    "type": "string",
-                },
-            },
-            "required": ["thought", "code"],
-            "title": "ThoughtAndCodeAnswer",
-            "type": "object",
-        },
-        "name": "ThoughtAndCodeAnswer",
-        "strict": True,
-    },
-}
-
-
 class MultiStepAgent(ABC):
     """
     Agent class that solves the given task step by step, using the ReAct framework:
@@ -207,7 +187,7 @@ class MultiStepAgent(ABC):
         max_steps (`int`, default `20`): Maximum number of steps the agent can take to solve the task.
         add_base_tools (`bool`, default `False`): Whether to add the base tools to the agent's tools.
         verbosity_level (`LogLevel`, default `LogLevel.INFO`): Level of verbosity of the agent's logs.
-        response_format (`dict[str, str]`, *optional*): Response format used to parse the LLM output.
+        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
         managed_agents (`list`, *optional*): Managed agents that the agent can call.
         step_callbacks (`list[Callable]`, *optional*): Callbacks that will be called at each step.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
@@ -225,7 +205,7 @@ class MultiStepAgent(ABC):
         max_steps: int = 20,
         add_base_tools: bool = False,
         verbosity_level: LogLevel = LogLevel.INFO,
-        response_format: dict[str, str] | None = None,
+        grammar: dict[str, str] | None = None,
         managed_agents: list | None = None,
         step_callbacks: list[Callable] | None = None,
         planning_interval: int | None = None,
@@ -252,7 +232,11 @@ class MultiStepAgent(ABC):
 
         self.max_steps = max_steps
         self.step_number = 0
-        self.response_format = response_format
+        if grammar is not None:
+            warnings.warn(
+                "The `grammar` argument is deprecated and will have no effect on agent behavior.",
+                DeprecationWarning,
+            )
         self.planning_interval = planning_interval
         self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
@@ -834,7 +818,6 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": self.prompt_templates,
             "max_steps": self.max_steps,
             "verbosity_level": int(self.logger.level),
-            "response_format": self.response_format,
             "planning_interval": self.planning_interval,
             "name": self.name,
             "description": self.description,
@@ -873,7 +856,6 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": agent_dict.get("prompt_templates"),
             "max_steps": agent_dict.get("max_steps"),
             "verbosity_level": agent_dict.get("verbosity_level"),
-            "response_format": agent_dict.get("response_format"),
             "planning_interval": agent_dict.get("planning_interval"),
             "name": agent_dict.get("name"),
             "description": agent_dict.get("description"),
@@ -1244,7 +1226,7 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
-        use_structured_output (`bool`, default `False`): Whether to use structured JSON generation in the action step.
+        use_structured_output (`bool`, default `False`): Whether to use structured generation in the action step.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
@@ -1271,9 +1253,10 @@ class CodeAgent(MultiStepAgent):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
+        self._use_structured_output = use_structured_output
         if use_structured_output:
             prompt_templates = prompt_templates or yaml.safe_load(
-                importlib.resources.files("smolagents.prompts").joinpath("json_code_agent.yaml").read_text()
+                importlib.resources.files("smolagents.prompts").joinpath("structured_code_agent.yaml").read_text()
             )
         else:
             prompt_templates = prompt_templates or yaml.safe_load(
@@ -1283,7 +1266,6 @@ class CodeAgent(MultiStepAgent):
             tools=tools,
             model=model,
             prompt_templates=prompt_templates,
-            response_format=DEFAULT_CODEAGENT_JSON_RESPONSE_FORMAT if use_structured_output else None,
             planning_interval=planning_interval,
             **kwargs,
         )
@@ -1344,7 +1326,7 @@ class CodeAgent(MultiStepAgent):
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {"response_format": self.response_format} if self.response_format is not None else {}
+            additional_args = {"response_format": CODEAGENT_RESPONSE_FORMAT} if self._use_structured_output else {}
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,

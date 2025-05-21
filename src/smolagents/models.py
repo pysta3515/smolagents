@@ -39,14 +39,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_JSONAGENT_REGEX_GRAMMAR = {
-    "type": "regex",
-    "value": 'Thought: .+?\\nAction:\\n\\{\\n\\s{4}"action":\\s"[^"\\n]+",\\n\\s{4}"action_input":\\s"[^"\\n]+"\\n\\}\\n<end_code>',
-}
-
-DEFAULT_CODEAGENT_REGEX_GRAMMAR = {
-    "type": "regex",
-    "value": "Thought: .+?\\nCode:\\n```(?:py|python)?\\n(?:.|\\s)+?\\n```<end_code>",
+CODEAGENT_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "schema": {
+            "additionalProperties": False,
+            "properties": {
+                "thought": {
+                    "description": "A free form text description of the thought process.",
+                    "title": "Thought",
+                    "type": "string",
+                },
+                "code": {
+                    "description": "Valid Python code snippet implementing the thought.",
+                    "title": "Code",
+                    "type": "string",
+                },
+            },
+            "required": ["thought", "code"],
+            "title": "ThoughtAndCodeAnswer",
+            "type": "object",
+        },
+        "name": "ThoughtAndCodeAnswer",
+        "strict": True,
+    },
 }
 
 
