@@ -1663,7 +1663,7 @@ class AmazonBedrockServerModel(ApiModel):
         completion_kwargs = super()._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=None,  # Bedrock support stop_sequence using Inference Config
-            response_format=None,  # Bedrock doesn't support response_format
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             custom_role_conversions=custom_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,

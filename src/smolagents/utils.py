@@ -16,7 +16,6 @@
 # limitations under the License.
 import ast
 import base64
-import codecs
 import importlib.metadata
 import importlib.util
 import inspect
@@ -189,37 +188,22 @@ def parse_code_from_json_string(text: str) -> str:
     code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', text, re.DOTALL)
     if code_match:
         code_content = code_match.group(1)
-        code_action = _fix_code_formatting(code_content)  # Decode the raw string content
+        extracted_code_action = extract_code_from_text(code_content) or code_content
     else:
         raise ValueError(
             "The JSON output does not contain a 'code' field. Make sure to include a 'code' field in the JSON output."
         )
 
-    return code_action
+    return extracted_code_action
 
 
-def _fix_code_formatting(text: str) -> str:
-    """
-    Extracts code from a string that might be wrapped in markdown code blocks.
-
-    Args:
-        text (`str`): The text to parse.
-
-    Returns:
-        `str`: The parsed code.
-    """
-    # remove escape characters
-    try:
-        text = codecs.decode(text, "unicode_escape")
-    except Exception:
-        text = text.replace("\\", "")
-
-    # extract code from possible markdown code blocks
+def extract_code_from_text(text: str) -> str | None:
+    """Extract code from the LLM's output."""
     pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
-        text = "\n\n".join(match.strip() for match in matches)
-    return text
+        return "\n\n".join(match.strip() for match in matches)
+    return None
 
 
 def parse_code_blobs(text: str) -> str:
@@ -236,10 +220,9 @@ def parse_code_blobs(text: str) -> str:
     Raises:
         ValueError: If no valid code block is found in the text.
     """
-    pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
-    matches = re.findall(pattern, text, re.DOTALL)
+    matches = extract_code_from_text(text)
     if matches:
-        return "\n\n".join(match.strip() for match in matches)
+        return matches
     # Maybe the LLM outputted a code blob directly
     try:
         ast.parse(text)
@@ -251,7 +234,7 @@ def parse_code_blobs(text: str) -> str:
         raise ValueError(
             dedent(
                 f"""
-                Your code snippet is invalid, because the regex pattern {pattern} was not found in it.
+                Your code snippet is invalid, because the regex pattern ```(?:py|python)?\\s*\\n(.*?)\\n``` was not found in it.
                 Here is your code snippet:
                 {text}
                 It seems like you're trying to return the final answer, you can do it as follows:
@@ -265,7 +248,7 @@ def parse_code_blobs(text: str) -> str:
     raise ValueError(
         dedent(
             f"""
-            Your code snippet is invalid, because the regex pattern {pattern} was not found in it.
+            Your code snippet is invalid, because the regex pattern ```(?:py|python)?\\s*\\n(.*?)\\n``` was not found in it.
             Here is your code snippet:
             {text}
             Make sure to include code with the correct pattern, for instance:
