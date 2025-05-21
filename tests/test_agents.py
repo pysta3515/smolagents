@@ -16,6 +16,7 @@ import io
 import os
 import tempfile
 import uuid
+import warnings
 from collections.abc import Generator
 from contextlib import nullcontext as does_not_raise
 from pathlib import Path
@@ -651,6 +652,22 @@ class TestMultiStepAgent:
         assert "final_answer" in agent.tools
         assert isinstance(agent.tools["final_answer"], expected_final_answer_tool)
 
+    def test_instantiation_with_deprecated_grammar(self):
+        class SimpleAgent(MultiStepAgent):
+            def initialize_system_prompt(self) -> str:
+                return "Test system prompt"
+
+        # Test with a non-None grammar parameter
+        with pytest.warns(
+            FutureWarning, match="Parameter 'grammar' is deprecated and will be removed in version 1.20."
+        ):
+            SimpleAgent(tools=[], model=MagicMock(), grammar={"format": "json"}, verbosity_level=LogLevel.DEBUG)
+
+        # Verify no warning when grammar is None
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Turn warnings into errors
+            SimpleAgent(tools=[], model=MagicMock(), grammar=None, verbosity_level=LogLevel.DEBUG)
+
     def test_logs_display_thoughts_even_if_error(self):
         class FakeJsonModelNoCall(Model):
             def generate(self, messages, stop_sequences=None, tools_to_call_from=None):
@@ -1108,6 +1125,37 @@ class TestToolCallingAgent:
 
 
 class TestCodeAgent:
+    @pytest.mark.filterwarnings("ignore")  # Ignore FutureWarning for deprecated grammar parameter
+    def test_init_with_incompatible_grammar_and_use_structured_output(self):
+        # Test that using both parameters raises ValueError with correct message
+        with pytest.raises(ValueError, match="You cannot use 'grammar' and 'use_structured_output' at the same time."):
+            CodeAgent(
+                tools=[],
+                model=MagicMock(),
+                grammar={"format": "json"},
+                use_structured_output=True,
+                verbosity_level=LogLevel.DEBUG,
+            )
+
+        # Verify no error when only one option is used
+        # Only grammar
+        agent_with_grammar = CodeAgent(
+            tools=[],
+            model=MagicMock(),
+            grammar={"format": "json"},
+            use_structured_output=False,
+            verbosity_level=LogLevel.DEBUG,
+        )
+        assert agent_with_grammar.grammar is not None
+        assert agent_with_grammar._use_structured_output is False
+
+        # Only structured output
+        agent_with_structured = CodeAgent(
+            tools=[], model=MagicMock(), grammar=None, use_structured_output=True, verbosity_level=LogLevel.DEBUG
+        )
+        assert agent_with_structured.grammar is None
+        assert agent_with_structured._use_structured_output is True
+
     @pytest.mark.parametrize("provide_run_summary", [False, True])
     def test_call_with_provide_run_summary(self, provide_run_summary):
         agent = CodeAgent(tools=[], model=MagicMock(), provide_run_summary=provide_run_summary)
