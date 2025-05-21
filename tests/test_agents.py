@@ -944,7 +944,6 @@ class TestMultiStepAgent:
             "prompt_templates": EMPTY_PROMPT_TEMPLATES,
             "max_steps": 15,
             "verbosity_level": 2,
-            "response_format": True,
             "planning_interval": 3,
             "name": "test_agent",
             "description": "Test agent description",
@@ -960,7 +959,6 @@ class TestMultiStepAgent:
         assert mock_model_class.from_dict.call_args.args[0] == {"model_id": "test/model"}
         assert agent.max_steps == 15
         assert agent.logger.level == 2
-        assert agent.response_format
         assert agent.planning_interval == 3
         assert agent.name == "test_agent"
         assert agent.description == "Test agent description"
@@ -1248,7 +1246,6 @@ class TestCodeAgent:
         assert agent.description == "dummy description"
         assert agent.max_steps == 10
         assert agent.planning_interval == 2
-        assert agent.response_format is None
         assert agent.additional_authorized_imports == ["pandas"]
         assert "pandas" in agent.authorized_imports
         assert agent.executor_type == "local"
