@@ -863,7 +863,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=None,  # Transformers doesn't support structured generation, use VLLMModel for that
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
@@ -906,7 +906,7 @@ class TransformersModel(Model):
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
-            response_format=None,  # Transformers doesn't support structured generation, use VLLMModel for that
+            response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
