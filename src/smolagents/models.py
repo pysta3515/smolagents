@@ -513,11 +513,8 @@ class VLLMModel(Model):
             tools_to_call_from=tools_to_call_from,
             **kwargs,
         )
-        if response_format is not None:
-            # Override the OpenAI schema for VLLM compatibility
-            response_format = {
-                "guided_json": response_format["json_schema"]["schema"],
-            }
+        # Override the OpenAI schema for VLLM compatibility
+        guided_options_request = {"guided_json": response_format["json_schema"]["schema"]} if response_format else None
 
         messages = completion_kwargs.pop("messages")
         prepared_stop_sequences = completion_kwargs.pop("stop", [])
@@ -547,7 +544,7 @@ class VLLMModel(Model):
         out = self.model.generate(
             prompt,
             sampling_params=sampling_params,
-            guided_options_request=response_format if response_format else None,
+            guided_options_request=guided_options_request,
         )
 
         output_text = out[0].outputs[0].text
