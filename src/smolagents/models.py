@@ -24,16 +24,12 @@ from enum import Enum
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
+from .monitoring import TokenUsage
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
 
 
 if TYPE_CHECKING:
-    from huggingface_hub import (
-        ChatCompletionOutputFunctionDefinition,
-        ChatCompletionOutputMessage,
-        ChatCompletionOutputToolCall,
-    )
     from transformers import StoppingCriteriaList
 
 
@@ -81,32 +77,12 @@ class ChatMessageToolCallDefinition:
     name: str
     description: str | None = None
 
-    @classmethod
-    def from_hf_api(
-        cls, tool_call_definition: "ChatCompletionOutputFunctionDefinition"
-    ) -> "ChatMessageToolCallDefinition":
-        warnings.warn(
-            "ChatMessageToolCallDefinition.from_hf_api is deprecated and will be removed in version 1.16.0. "
-            "Please use ChatMessageToolCallDefinition with asdict() instead.",
-            FutureWarning,
-        )
-        return cls(**asdict(tool_call_definition))
-
 
 @dataclass
 class ChatMessageToolCall:
     function: ChatMessageToolCallDefinition
     id: str
     type: str
-
-    @classmethod
-    def from_hf_api(cls, tool_call: "ChatCompletionOutputToolCall") -> "ChatMessageToolCall":
-        warnings.warn(
-            "ChatMessageToolCall.from_hf_api is deprecated and will be removed in version 1.16.0. "
-            "Please use ChatMessageToolCall with asdict() instead.",
-            FutureWarning,
-        )
-        return cls(**asdict(tool_call))
 
 
 @dataclass
@@ -115,12 +91,13 @@ class ChatMessage:
     content: str | None = None
     tool_calls: list[ChatMessageToolCall] | None = None
     raw: Any | None = None  # Stores the raw output from the API
+    token_usage: TokenUsage | None = None
 
     def model_dump_json(self):
         return json.dumps(get_dict_from_nested_dataclasses(self, ignore_key="raw"))
 
     @classmethod
-    def from_dict(cls, data: dict, raw: Any | None = None) -> "ChatMessage":
+    def from_dict(cls, data: dict, raw: Any | None = None, token_usage: TokenUsage | None = None) -> "ChatMessage":
         if data.get("tool_calls"):
             tool_calls = [
                 ChatMessageToolCall(
@@ -129,19 +106,16 @@ class ChatMessage:
                 for tc in data["tool_calls"]
             ]
             data["tool_calls"] = tool_calls
-        return cls(role=data["role"], content=data.get("content"), tool_calls=data.get("tool_calls"), raw=raw)
+        return cls(
+            role=data["role"],
+            content=data.get("content"),
+            tool_calls=data.get("tool_calls"),
+            raw=raw,
+            token_usage=token_usage,
+        )
 
     def dict(self):
-        return json.dumps(get_dict_from_nested_dataclasses(self))
-
-    @classmethod
-    def from_hf_api(cls, message: "ChatCompletionOutputMessage", raw) -> "ChatMessage":
-        warnings.warn(
-            "ChatMessage.from_hf_api is deprecated and will be removed in version 1.16.0. "
-            "Please use ChatMessage.from_dict with asdict() instead.",
-            FutureWarning,
-        )
-        return cls.from_dict(asdict(message), raw=raw)
+        return get_dict_from_nested_dataclasses(self)
 
 
 def parse_json_if_needed(arguments: str | dict) -> str | dict:
@@ -158,6 +132,7 @@ def parse_json_if_needed(arguments: str | dict) -> str | dict:
 class ChatMessageStreamDelta:
     content: str | None = None
     tool_calls: list[ChatMessageToolCall] | None = None
+    token_usage: TokenUsage | None = None
 
 
 class MessageRole(str, Enum):
@@ -317,9 +292,27 @@ class Model:
         self.tool_name_key = tool_name_key
         self.tool_arguments_key = tool_arguments_key
         self.kwargs = kwargs
-        self.last_input_token_count: int | None = None
-        self.last_output_token_count: int | None = None
+        self._last_input_token_count: int | None = None
+        self._last_output_token_count: int | None = None
         self.model_id: str | None = model_id
+
+    @property
+    def last_input_token_count(self) -> int | None:
+        warnings.warn(
+            "Attribute last_input_token_count is deprecated and will be removed in version 1.20. "
+            "Please use TokenUsage.input_tokens instead.",
+            FutureWarning,
+        )
+        return self._last_input_token_count
+
+    @property
+    def last_output_token_count(self) -> int | None:
+        warnings.warn(
+            "Attribute last_output_token_count is deprecated and will be removed in version 1.20. "
+            "Please use TokenUsage.output_tokens instead.",
+            FutureWarning,
+        )
+        return self._last_output_token_count
 
     def _prepare_completion_kwargs(
         self,
@@ -375,17 +368,9 @@ class Model:
 
         return completion_kwargs
 
-    def get_token_counts(self) -> dict[str, int]:
-        if self.last_input_token_count is None or self.last_output_token_count is None:
-            raise ValueError("Token counts are not available")
-        return {
-            "input_token_count": self.last_input_token_count,
-            "output_token_count": self.last_output_token_count,
-        }
-
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -394,7 +379,7 @@ class Model:
         """Process the input messages and return the model's response.
 
         Parameters:
-            messages (`list[dict[str, str]]`):
+            messages (`list[dict[str, str | list[dict]]] | list[ChatMessage]`):
                 A list of message dictionaries to be processed. Each dictionary should have the structure `{"role": "user/system", "content": "message content"}`.
             stop_sequences (`List[str]`, *optional*):
                 A list of strings that will stop the generation if encountered in the model's output.
@@ -432,8 +417,6 @@ class Model:
         """
         model_dictionary = {
             **self.kwargs,
-            "last_input_token_count": self.last_input_token_count,
-            "last_output_token_count": self.last_output_token_count,
             "model_id": self.model_id,
         }
         for attribute in [
@@ -462,16 +445,7 @@ class Model:
 
     @classmethod
     def from_dict(cls, model_dictionary: dict[str, Any]) -> "Model":
-        model_instance = cls(
-            **{
-                k: v
-                for k, v in model_dictionary.items()
-                if k not in ["last_input_token_count", "last_output_token_count"]
-            }
-        )
-        model_instance.last_input_token_count = model_dictionary.pop("last_input_token_count", None)
-        model_instance.last_output_token_count = model_dictionary.pop("last_output_token_count", None)
-        return model_instance
+        return cls(**{k: v for k, v in model_dictionary.items()})
 
 
 class VLLMModel(Model):
@@ -524,7 +498,7 @@ class VLLMModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -577,12 +551,16 @@ class VLLMModel(Model):
         )
 
         output_text = out[0].outputs[0].text
-        self.last_input_token_count = len(out[0].prompt_token_ids)
-        self.last_output_token_count = len(out[0].outputs[0].token_ids)
+        self._last_input_token_count = len(out[0].prompt_token_ids)
+        self._last_output_token_count = len(out[0].outputs[0].token_ids)
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
             raw={"out": output_text, "completion_kwargs": completion_kwargs},
+            token_usage=TokenUsage(
+                input_tokens=len(out[0].prompt_token_ids),
+                output_tokens=len(out[0].outputs[0].token_ids),
+            ),
         )
 
 
@@ -650,7 +628,7 @@ class MLXModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -674,18 +652,25 @@ class MLXModel(Model):
             add_generation_prompt=True,
         )
 
-        self.last_input_token_count = len(prompt_ids)
-        self.last_output_token_count = 0
+        output_tokens = 0
         text = ""
         for response in self.stream_generate(self.model, self.tokenizer, prompt=prompt_ids, **completion_kwargs):
-            self.last_output_token_count += 1
+            output_tokens += 1
             text += response.text
             if any((stop_index := text.rfind(stop)) != -1 for stop in stops):
                 text = text[:stop_index]
                 break
 
+        self._last_input_token_count = len(prompt_ids)
+        self._last_output_token_count = output_tokens
         return ChatMessage(
-            role=MessageRole.ASSISTANT, content=text, raw={"out": text, "completion_kwargs": completion_kwargs}
+            role=MessageRole.ASSISTANT,
+            content=text,
+            raw={"out": text, "completion_kwargs": completion_kwargs},
+            token_usage=TokenUsage(
+                input_tokens=len(prompt_ids),
+                output_tokens=output_tokens,
+            ),
         )
 
 
@@ -869,7 +854,7 @@ class TransformersModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -891,12 +876,12 @@ class TransformersModel(Model):
             output_text = self.processor.decode(generated_tokens, skip_special_tokens=True)
         else:
             output_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
-        self.last_input_token_count = count_prompt_tokens
-        self.last_output_token_count = len(generated_tokens)
 
         if stop_sequences is not None:
             output_text = remove_stop_sequences(output_text, stop_sequences)
 
+        self._last_input_token_count = count_prompt_tokens
+        self._last_output_token_count = len(generated_tokens)
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=output_text,
@@ -904,6 +889,10 @@ class TransformersModel(Model):
                 "out": output_text,
                 "completion_kwargs": {key: value for key, value in generation_kwargs.items() if key != "inputs"},
             },
+            token_usage=TokenUsage(
+                input_tokens=count_prompt_tokens,
+                output_tokens=len(generated_tokens),
+            ),
         )
 
     def generate_stream(
@@ -926,14 +915,15 @@ class TransformersModel(Model):
         thread = Thread(target=self.model.generate, kwargs={"streamer": self.streamer, **generation_kwargs})
         thread.start()
 
-        self.last_output_token_count = 0
-
         # Generate with streaming
         for new_text in self.streamer:
-            yield ChatMessageStreamDelta(content=new_text, tool_calls=None)
-            self.last_output_token_count += 1
-
-        self.last_input_token_count = count_prompt_tokens
+            self._last_input_token_count = count_prompt_tokens
+            self._last_output_token_count = 1
+            yield ChatMessageStreamDelta(
+                content=new_text,
+                tool_calls=None,
+                token_usage=TokenUsage(input_tokens=count_prompt_tokens, output_tokens=1),
+            )
         thread.join()
 
 
@@ -1030,7 +1020,7 @@ class LiteLLMModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1051,11 +1041,15 @@ class LiteLLMModel(ApiModel):
 
         response = self.client.completion(**completion_kwargs)
 
-        self.last_input_token_count = response.usage.prompt_tokens
-        self.last_output_token_count = response.usage.completion_tokens
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
+            token_usage=TokenUsage(
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+            ),
         )
 
     def generate_stream(
@@ -1074,22 +1068,28 @@ class LiteLLMModel(ApiModel):
             response_format=response_format,
             tools_to_call_from=tools_to_call_from,
             model=self.model_id,
+            api_base=self.api_base,
+            api_key=self.api_key,
             custom_role_conversions=self.custom_role_conversions,
             convert_images_to_image_urls=True,
             **kwargs,
         )
         for event in self.client.completion(**completion_kwargs, stream=True, stream_options={"include_usage": True}):
             if event.choices:
-                if event.choices[0].delta is None:
-                    if not getattr(event.choices[0], "finish_reason", None):
-                        raise ValueError(f"No content or tool calls in event: {event}")
-                else:
+                if event.choices[0].delta.content:
                     yield ChatMessageStreamDelta(
                         content=event.choices[0].delta.content,
                     )
             if getattr(event, "usage", None):
-                self.last_input_token_count = event.usage.prompt_tokens
-                self.last_output_token_count = event.usage.completion_tokens
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
 
 class LiteLLMRouterModel(LiteLLMModel):
@@ -1188,7 +1188,7 @@ class LiteLLMRouterModel(LiteLLMModel):
 class InferenceClientModel(ApiModel):
     """A class to interact with Hugging Face's Inference Providers for language model interaction.
 
-    This model allows you to communicate with Hugging Face's models using Inference Providers. It can be used in both serverless mode or with a dedicated endpoint, supporting features like stop sequences and grammar customization.
+    This model allows you to communicate with Hugging Face's models using Inference Providers. It can be used in both serverless mode, with a dedicated endpoint, or even with a local URL, supporting features like stop sequences and grammar customization.
 
     Providers include Cerebras, Cohere, Fal, Fireworks, HF-Inference, Hyperbolic, Nebius, Novita, Replicate, SambaNova, Together, and more.
 
@@ -1198,8 +1198,9 @@ class InferenceClientModel(ApiModel):
             This can be a model identifier from the Hugging Face model hub or a URL to a deployed Inference Endpoint.
             Currently, it defaults to `"Qwen/Qwen2.5-Coder-32B-Instruct"`, but this may change in the future.
         provider (`str`, *optional*):
-            Name of the provider to use for inference. Can be `"black-forest-labs"`, `"cerebras"`, `"cohere"`, `"fal-ai"`, `"fireworks-ai"`, `"hf-inference"`, `"hyperbolic"`, `"nebius"`, `"novita"`, `"openai"`, `"replicate"`, "sambanova"`, `"together"`, etc.
-            Currently, it defaults to hf-inference (HF Inference API).
+            Name of the provider to use for inference. A list of supported providers can be found in the [Inference Providers documentation](https://huggingface.co/docs/inference-providers/index#partners).
+            Defaults to "auto" i.e. the first of the providers available for the model, sorted by the user's order [here](https://hf.co/settings/inference-providers).
+            If `base_url` is passed, then `provider` is not used.
         token (`str`, *optional*):
             Token used by the Hugging Face API for authentication. This token need to be authorized 'Make calls to the serverless Inference Providers'.
             If the model is gated (like Llama-3 models), the token also needs 'Read access to contents of all public gated repos you can access'.
@@ -1217,8 +1218,11 @@ class InferenceClientModel(ApiModel):
         bill_to (`str`, *optional*):
             The billing account to use for the requests. By default the requests are billed on the user’s account. Requests can only be billed to
             an organization the user is a member of, and which has subscribed to Enterprise Hub.
+        base_url (`str`, `optional`):
+            Base URL to run inference. This is a duplicated argument from `model` to make [`InferenceClientModel`]
+            follow the same pattern as `openai.OpenAI` client. Cannot be used if `model` is set. Defaults to None.
         **kwargs:
-            Additional keyword arguments to pass to the Hugging Face API.
+            Additional keyword arguments to pass to the Hugging Face InferenceClient.
 
     Raises:
         ValueError:
@@ -1228,7 +1232,7 @@ class InferenceClientModel(ApiModel):
     ```python
     >>> engine = InferenceClientModel(
     ...     model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
-    ...     provider="together",
+    ...     provider="nebius",
     ...     token="your_hf_token_here",
     ...     max_tokens=5000,
     ... )
@@ -1249,6 +1253,7 @@ class InferenceClientModel(ApiModel):
         custom_role_conversions: dict[str, str] | None = None,
         api_key: str | None = None,
         bill_to: str | None = None,
+        base_url: str | None = None,
         **kwargs,
     ):
         if token is not None and api_key is not None:
@@ -1267,6 +1272,7 @@ class InferenceClientModel(ApiModel):
             "token": token,
             "timeout": timeout,
             "bill_to": bill_to,
+            "base_url": base_url,
         }
         super().__init__(model_id=model_id, custom_role_conversions=custom_role_conversions, **kwargs)
 
@@ -1278,7 +1284,7 @@ class InferenceClientModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1295,9 +1301,16 @@ class InferenceClientModel(ApiModel):
         )
         response = self.client.chat_completion(**completion_kwargs)
 
-        self.last_input_token_count = response.usage.prompt_tokens
-        self.last_output_token_count = response.usage.completion_tokens
-        return ChatMessage.from_dict(asdict(response.choices[0].message), raw=response)
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
+        return ChatMessage.from_dict(
+            asdict(response.choices[0].message),
+            raw=response,
+            token_usage=TokenUsage(
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+            ),
+        )
 
     def generate_stream(
         self,
@@ -1331,8 +1344,15 @@ class InferenceClientModel(ApiModel):
                         content=event.choices[0].delta.content,
                     )
             if getattr(event, "usage", None):
-                self.last_input_token_count = event.usage.prompt_tokens
-                self.last_output_token_count = event.usage.completion_tokens
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
 
 class HfApiModel(InferenceClientModel):
@@ -1433,16 +1453,21 @@ class OpenAIServerModel(ApiModel):
                     if not getattr(event.choices[0], "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
                 else:
-                    yield ChatMessageStreamDelta(
-                        content=event.choices[0].delta.content,
-                    )
-            if getattr(event, "usage", None):
-                self.last_input_token_count = event.usage.prompt_tokens
-                self.last_output_token_count = event.usage.completion_tokens
+                    yield ChatMessageStreamDelta(content=event.choices[0].delta.content)
+            if event.usage:
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1459,12 +1484,16 @@ class OpenAIServerModel(ApiModel):
             **kwargs,
         )
         response = self.client.chat.completions.create(**completion_kwargs)
-        self.last_input_token_count = response.usage.prompt_tokens
-        self.last_output_token_count = response.usage.completion_tokens
 
+        self._last_input_token_count = response.usage.prompt_tokens
+        self._last_output_token_count = response.usage.completion_tokens
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
+            token_usage=TokenUsage(
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+            ),
         )
 
 
@@ -1669,7 +1698,7 @@ class AmazonBedrockServerModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[dict[str, str | list[dict]] | ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1686,13 +1715,19 @@ class AmazonBedrockServerModel(ApiModel):
         # self.client is created in ApiModel class
         response = self.client.converse(**completion_kwargs)
 
-        # Get usage
-        self.last_input_token_count = response["usage"]["inputTokens"]
-        self.last_output_token_count = response["usage"]["outputTokens"]
-
         # Get first message
         response["output"]["message"]["content"] = response["output"]["message"]["content"][0]["text"]
-        return ChatMessage.from_dict(response["output"]["message"], raw=response)
+
+        self._last_input_token_count = response["usage"]["inputTokens"]
+        self._last_output_token_count = response["usage"]["outputTokens"]
+        return ChatMessage.from_dict(
+            response["output"]["message"],
+            raw=response,
+            token_usage=TokenUsage(
+                input_tokens=response["usage"]["inputTokens"],
+                output_tokens=response["usage"]["outputTokens"],
+            ),
+        )
 
 
 __all__ = [
