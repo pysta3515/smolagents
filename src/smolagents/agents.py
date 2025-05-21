@@ -215,6 +215,9 @@ class MultiStepAgent(ABC):
         add_base_tools (`bool`, default `False`): Whether to add the base tools to the agent's tools.
         verbosity_level (`LogLevel`, default `LogLevel.INFO`): Level of verbosity of the agent's logs.
         grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+            <Deprecated version="1.17.0">
+            Parameter `grammar` is deprecated and will be removed in version 1.20.
+            </Deprecated>
         managed_agents (`list`, *optional*): Managed agents that the agent can call.
         step_callbacks (`list[Callable]`, *optional*): Callbacks that will be called at each step.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
@@ -262,9 +265,10 @@ class MultiStepAgent(ABC):
         self.step_number = 0
         if grammar is not None:
             warnings.warn(
-                "The `grammar` argument is deprecated and will have no effect on agent behavior.",
-                DeprecationWarning,
+                "Parameter 'grammar' is deprecated and will be removed in version 1.20.",
+                FutureWarning,
             )
+        self.grammar = grammar
         self.planning_interval = planning_interval
         self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
@@ -935,6 +939,7 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": self.prompt_templates,
             "max_steps": self.max_steps,
             "verbosity_level": int(self.logger.level),
+            "grammar": self.grammar,
             "planning_interval": self.planning_interval,
             "name": self.name,
             "description": self.description,
@@ -973,6 +978,7 @@ You have been provided with these additional arguments, that you can access usin
             "prompt_templates": agent_dict.get("prompt_templates"),
             "max_steps": agent_dict.get("max_steps"),
             "verbosity_level": agent_dict.get("verbosity_level"),
+            "grammar": agent_dict.get("grammar"),
             "planning_interval": agent_dict.get("planning_interval"),
             "name": agent_dict.get("name"),
             "description": agent_dict.get("description"),
@@ -1344,6 +1350,10 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
+        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+            <Deprecated version="1.17.0">
+            Parameter `grammar` is deprecated and will be removed in version 1.20.
+            </Deprecated>
         use_structured_output (`bool`, default `False`): Whether to use structured generation in the action step.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
@@ -1359,6 +1369,7 @@ class CodeAgent(MultiStepAgent):
         tools: list[Tool],
         model: Model,
         prompt_templates: PromptTemplates | None = None,
+        grammar: dict[str, str] | None = None,
         use_structured_output: bool = False,
         additional_authorized_imports: list[str] | None = None,
         planning_interval: int | None = None,
@@ -1380,10 +1391,13 @@ class CodeAgent(MultiStepAgent):
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
             )
+        if grammar and use_structured_output:
+            raise ValueError("You cannot use 'grammar' and 'use_structured_output' at the same time.")
         super().__init__(
             tools=tools,
             model=model,
             prompt_templates=prompt_templates,
+            grammar=grammar,
             planning_interval=planning_interval,
             **kwargs,
         )
@@ -1445,7 +1459,11 @@ class CodeAgent(MultiStepAgent):
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {"response_format": CODEAGENT_RESPONSE_FORMAT} if self._use_structured_output else {}
+            additional_args = {}
+            if self.grammar:
+                additional_args["grammar"] = self.grammar
+            if self._use_structured_output:
+                additional_args["response_format"] = CODEAGENT_RESPONSE_FORMAT
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,
