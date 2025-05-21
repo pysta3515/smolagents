@@ -84,10 +84,10 @@ from .utils import (
     AgentParsingError,
     AgentToolCallError,
     AgentToolExecutionError,
+    extract_code_from_text,
     is_valid_name,
     make_init_file,
     parse_code_blobs,
-    parse_code_from_json_string,
     truncate_content,
 )
 
@@ -1465,14 +1465,13 @@ class CodeAgent(MultiStepAgent):
                         assert isinstance(event, ChatMessageStreamDelta)
                         yield event
 
-                model_output = output_text
                 chat_message = ChatMessage(
                     role="assistant",
-                    content=model_output,
+                    content=output_text,
                     token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
                 )
                 memory_step.model_output_message = chat_message
-                model_output = chat_message.content
+                output_text = chat_message.content
             else:
                 chat_message: ChatMessage = self.model.generate(
                     input_messages,
@@ -1480,30 +1479,31 @@ class CodeAgent(MultiStepAgent):
                     **additional_args,
                 )
                 memory_step.model_output_message = chat_message
-                model_output = chat_message.content
+                output_text = chat_message.content
                 self.logger.log_markdown(
-                    content=model_output,
+                    content=output_text,
                     title="Output message of the LLM:",
                     level=LogLevel.DEBUG,
                 )
 
             # This adds <end_code> sequence to the history.
             # This will nudge ulterior LLM calls to finish with <end_code>, thus efficiently stopping generation.
-            if model_output and model_output.strip().endswith("```"):
-                model_output += "<end_code>"
-                memory_step.model_output_message.content = model_output
+            if output_text and output_text.strip().endswith("```"):
+                output_text += "<end_code>"
+                memory_step.model_output_message.content = output_text
 
             memory_step.token_usage = chat_message.token_usage
-            memory_step.model_output = model_output
+            memory_step.model_output = output_text
         except Exception as e:
             raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
 
         ### Parse output ###
         try:
-            if self.response_format is not None:
-                code_action = parse_code_from_json_string(model_output)
+            if self._use_structured_output:
+                code_action = json.loads(output_text)["code"]
+                code_action = extract_code_from_text(code_action) or code_action
             else:
-                code_action = parse_code_blobs(model_output)
+                code_action = parse_code_blobs(output_text)
             code_action = fix_final_answer_code(code_action)
         except Exception as e:
             error_msg = f"Error in code parsing:\n{e}\nMake sure to provide correct code blobs."

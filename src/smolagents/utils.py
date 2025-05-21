@@ -172,31 +172,6 @@ def parse_json_blob(json_blob: str) -> tuple[dict[str, str], str]:
         )
 
 
-def parse_code_from_json_string(text: str) -> str:
-    """
-    Parser for JSON-like string to extract the 'code' field.
-    Assumes the structure is somewhat like: ... "thought": "...", ... "code": "..." ...
-    The 'thought' field is disregarded since its not needed for action step.
-
-    Args:
-        text (`str`): The text to parse.
-
-    Returns:
-        `str`: The parsed code.
-    """
-
-    code_match = re.search(r'"code"\s*:\s*"(.*?)"(?=\s*}\s*$|\s*,\s*")', text, re.DOTALL)
-    if code_match:
-        code_content = code_match.group(1)
-        extracted_code_action = extract_code_from_text(code_content) or code_content
-    else:
-        raise ValueError(
-            "The JSON output does not contain a 'code' field. Make sure to include a 'code' field in the JSON output."
-        )
-
-    return extracted_code_action
-
-
 def extract_code_from_text(text: str) -> str | None:
     """Extract code from the LLM's output."""
     pattern = r"```(?:py|python)?\s*\n(.*?)\n```"
