@@ -69,7 +69,7 @@ def agent_logger():
 
 
 class FakeToolCallModel(Model):
-    def generate(self, messages, tools_to_call_from=None, stop_sequences=None, grammar=None):
+    def generate(self, messages, tools_to_call_from=None, stop_sequences=None):
         if len(messages) < 3:
             return ChatMessage(
                 role="assistant",
@@ -99,7 +99,7 @@ class FakeToolCallModel(Model):
 
 
 class FakeToolCallModelImage(Model):
-    def generate(self, messages, tools_to_call_from=None, stop_sequences=None, grammar=None):
+    def generate(self, messages, tools_to_call_from=None, stop_sequences=None):
         if len(messages) < 3:
             return ChatMessage(
                 role="assistant",
@@ -130,7 +130,7 @@ class FakeToolCallModelImage(Model):
 
 
 class FakeToolCallModelVL(Model):
-    def generate(self, messages, tools_to_call_from=None, stop_sequences=None, grammar=None):
+    def generate(self, messages, tools_to_call_from=None, stop_sequences=None):
         if len(messages) < 3:
             return ChatMessage(
                 role="assistant",
@@ -164,7 +164,7 @@ class FakeToolCallModelVL(Model):
 
 
 class FakeCodeModel(Model):
-    def generate(self, messages, stop_sequences=None, grammar=None):
+    def generate(self, messages, stop_sequences=None):
         prompt = str(messages)
         if "special_marker" not in prompt:
             return ChatMessage(
@@ -299,7 +299,7 @@ final_answer(res)
 
 
 class FakeCodeModelSingleStep(Model):
-    def generate(self, messages, stop_sequences=None, grammar=None):
+    def generate(self, messages, stop_sequences=None):
         return ChatMessage(
             role="assistant",
             content="""
@@ -314,7 +314,7 @@ final_answer(result)
 
 
 class FakeCodeModelNoReturn(Model):
-    def generate(self, messages, stop_sequences=None, grammar=None):
+    def generate(self, messages, stop_sequences=None):
         return ChatMessage(
             role="assistant",
             content="""
@@ -529,7 +529,7 @@ class TestAgent:
 
     def test_code_nontrivial_final_answer_works(self):
         class FakeCodeModelFinalAnswer(Model):
-            def generate(self, messages, stop_sequences=None, grammar=None):
+            def generate(self, messages, stop_sequences=None):
                 return ChatMessage(
                     role="assistant",
                     content="""Code:
@@ -587,7 +587,7 @@ nested_answer()
 
     def test_generation_errors_are_raised(self):
         class FakeCodeModel(Model):
-            def generate(self, messages, stop_sequences=None, grammar=None):
+            def generate(self, messages, stop_sequences=None):
                 assert False, "Generation failed"
 
         agent = CodeAgent(model=FakeCodeModel(), tools=[])
@@ -1069,7 +1069,7 @@ class TestToolCallingAgent:
             return "2"
 
         class FakeCodeModel(Model):
-            def generate(self, messages, tools_to_call_from=None, stop_sequences=None, grammar=None):
+            def generate(self, messages, tools_to_call_from=None, stop_sequences=None):
                 if len(messages) < 3:
                     return ChatMessage(
                         role="assistant",
@@ -1128,7 +1128,7 @@ class TestCodeAgent:
 
     def test_errors_logging(self):
         class FakeCodeModel(Model):
-            def generate(self, messages, stop_sequences=None, grammar=None):
+            def generate(self, messages, stop_sequences=None):
                 return ChatMessage(role="assistant", content="Code:\n```py\nsecret=3;['1', '2'][secret]\n```")
 
         agent = CodeAgent(tools=[], model=FakeCodeModel(), verbosity_level=1)
@@ -1205,7 +1205,7 @@ class TestCodeAgent:
             return "2"
 
         class FakeCodeModel(Model):
-            def generate(self, messages, stop_sequences=None, grammar=None):
+            def generate(self, messages, stop_sequences=None):
                 return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
 
         agent = CodeAgent(tools=[fake_tool_1], model=FakeCodeModel())
@@ -1391,7 +1391,6 @@ class TestMultiAgents:
                 self,
                 messages,
                 stop_sequences=None,
-                grammar=None,
                 tools_to_call_from=None,
             ):
                 if tools_to_call_from is not None:
@@ -1460,7 +1459,6 @@ final_answer("Final report.")
                 messages,
                 tools_to_call_from=None,
                 stop_sequences=None,
-                grammar=None,
             ):
                 return ChatMessage(
                     role="assistant",
