@@ -1356,7 +1356,7 @@ class CodeAgent(MultiStepAgent):
         executor_kwargs (`dict`, *optional*): Additional arguments to pass to initialize the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
         stream_outputs (`bool`, *optional*, default `False`): Whether to stream outputs during execution.
-        use_structured_generation_internally (`bool`, default `False`): Whether to use structured generation at each action step: improves performance for many models.
+        use_structured_outputs_internally (`bool`, default `False`): Whether to use structured generation at each action step: improves performance for many models.
         grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
             <Deprecated version="1.17.0">
             Parameter `grammar` is deprecated and will be removed in version 1.20.
@@ -1375,15 +1375,15 @@ class CodeAgent(MultiStepAgent):
         executor_kwargs: dict[str, Any] | None = None,
         max_print_outputs_length: int | None = None,
         stream_outputs: bool = False,
-        use_structured_generation_internally: bool = False,
+        use_structured_outputs_internally: bool = False,
         grammar: dict[str, str] | None = None,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        self.use__structure_internal_outputs = use_structured_generation_internally
-        if use_structured_generation_internally:
+        self.use__structure_internal_outputs = use_structured_outputs_internally
+        if use_structured_outputs_internally:
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("structured_code_agent.yaml").read_text()
             )
@@ -1391,8 +1391,8 @@ class CodeAgent(MultiStepAgent):
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
             )
-        if grammar and use_structured_generation_internally:
-            raise ValueError("You cannot use 'grammar' and 'use_structured_generation_internally' at the same time.")
+        if grammar and use_structured_outputs_internally:
+            raise ValueError("You cannot use 'grammar' and 'use_structured_outputs_internally' at the same time.")
         super().__init__(
             tools=tools,
             model=model,
