@@ -1382,7 +1382,7 @@ class CodeAgent(MultiStepAgent):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        self.use_structured_outputs_internally = use_structured_outputs_internally
+        self._use_structured_outputs_internally = use_structured_outputs_internally
         if use_structured_outputs_internally:
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("structured_code_agent.yaml").read_text()
@@ -1462,7 +1462,7 @@ class CodeAgent(MultiStepAgent):
             additional_args: dict[str, Any] = {}
             if self.grammar:
                 additional_args["grammar"] = self.grammar
-            if self.use_structured_outputs_internally:
+            if self._use_structured_outputs_internally:
                 additional_args["response_format"] = CODEAGENT_RESPONSE_FORMAT
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
@@ -1517,7 +1517,7 @@ class CodeAgent(MultiStepAgent):
 
         ### Parse output ###
         try:
-            if self.use_structured_outputs_internally:
+            if self._use_structured_outputs_internally:
                 code_action = json.loads(output_text)["code"]
                 code_action = extract_code_from_text(code_action) or code_action
             else:
