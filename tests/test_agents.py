@@ -1126,14 +1126,16 @@ class TestToolCallingAgent:
 
 class TestCodeAgent:
     @pytest.mark.filterwarnings("ignore")  # Ignore FutureWarning for deprecated grammar parameter
-    def test_init_with_incompatible_grammar_and_use_structured_output(self):
+    def test_init_with_incompatible_grammar_and_use_structured_outputs_internally(self):
         # Test that using both parameters raises ValueError with correct message
-        with pytest.raises(ValueError, match="You cannot use 'grammar' and 'use_structured_output' at the same time."):
+        with pytest.raises(
+            ValueError, match="You cannot use 'grammar' and 'use_structured_outputs_internally' at the same time."
+        ):
             CodeAgent(
                 tools=[],
                 model=MagicMock(),
                 grammar={"format": "json"},
-                use_structured_output=True,
+                use_structured_outputs_internally=True,
                 verbosity_level=LogLevel.DEBUG,
             )
 
@@ -1143,18 +1145,18 @@ class TestCodeAgent:
             tools=[],
             model=MagicMock(),
             grammar={"format": "json"},
-            use_structured_output=False,
+            use_structured_outputs_internally=False,
             verbosity_level=LogLevel.DEBUG,
         )
         assert agent_with_grammar.grammar is not None
-        assert agent_with_grammar._use_structured_output is False
+        assert agent_with_grammar._use_structured_outputs_internally is False
 
         # Only structured output
         agent_with_structured = CodeAgent(
             tools=[], model=MagicMock(), grammar=None, use_structured_output=True, verbosity_level=LogLevel.DEBUG
         )
         assert agent_with_structured.grammar is None
-        assert agent_with_structured._use_structured_output is True
+        assert agent_with_structured._use_structured_outputs_internally is True
 
     @pytest.mark.parametrize("provide_run_summary", [False, True])
     def test_call_with_provide_run_summary(self, provide_run_summary):

@@ -633,7 +633,7 @@ class MLXModel(Model):
         **kwargs,
     ) -> ChatMessage:
         if response_format is not None:
-            raise ValueError("MLX does not support structured generation.")
+            raise ValueError("MLX does not support structured outputs.")
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -860,7 +860,7 @@ class TransformersModel(Model):
         **kwargs,
     ) -> ChatMessage:
         if response_format is not None:
-            raise ValueError("Transformers does not support structured generation, use VLLMModel for this.")
+            raise ValueError("Transformers does not support structured outputs, use VLLMModel for this.")
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -904,7 +904,7 @@ class TransformersModel(Model):
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
         if response_format is not None:
-            raise ValueError("Transformers does not support structured generation, use VLLMModel for this.")
+            raise ValueError("Transformers does not support structured outputs, use VLLMModel for this.")
         generation_kwargs = self._prepare_completion_args(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -1294,7 +1294,7 @@ class InferenceClientModel(ApiModel):
     ) -> ChatMessage:
         if response_format is not None and self.client_kwargs["provider"] not in STRUCTURED_GENERATION_PROVIDERS:
             raise ValueError(
-                "InferenceClientModel only supports structured generation with these providers:"
+                "InferenceClientModel only supports structured outputs with these providers:"
                 + ", ".join(STRUCTURED_GENERATION_PROVIDERS)
             )
         completion_kwargs = self._prepare_completion_kwargs(
@@ -1331,7 +1331,7 @@ class InferenceClientModel(ApiModel):
             raise NotImplementedError("Streaming is not yet supported for tool calling")
         if response_format is not None and self.client_kwargs["provider"] not in STRUCTURED_GENERATION_PROVIDERS:
             raise ValueError(
-                "InferenceClientModel only supports structured generation with these providers:"
+                "InferenceClientModel only supports structured outputs with these providers:"
                 + ", ".join(STRUCTURED_GENERATION_PROVIDERS)
             )
         completion_kwargs = self._prepare_completion_kwargs(
