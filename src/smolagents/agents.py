@@ -1350,17 +1350,17 @@ class CodeAgent(MultiStepAgent):
         tools (`list[Tool]`): [`Tool`]s that the agent can use.
         model (`Model`): Model that will generate the agent's actions.
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
-        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
-            <Deprecated version="1.17.0">
-            Parameter `grammar` is deprecated and will be removed in version 1.20.
-            </Deprecated>
-        use_structured_output (`bool`, default `False`): Whether to use structured generation in the action step.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
         executor_type (`str`, default `"local"`): Which executor type to use between `"local"`, `"e2b"`, or `"docker"`.
         executor_kwargs (`dict`, *optional*): Additional arguments to pass to initialize the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
         stream_outputs (`bool`, *optional*, default `False`): Whether to stream outputs during execution.
+        use_structured_generation_internally (`bool`, default `False`): Whether to use structured generation at each action step: improves performance for many models.
+        grammar (`dict[str, str]`, *optional*): Grammar used to parse the LLM output.
+            <Deprecated version="1.17.0">
+            Parameter `grammar` is deprecated and will be removed in version 1.20.
+            </Deprecated>
         **kwargs: Additional keyword arguments.
     """
 
@@ -1369,21 +1369,21 @@ class CodeAgent(MultiStepAgent):
         tools: list[Tool],
         model: Model,
         prompt_templates: PromptTemplates | None = None,
-        grammar: dict[str, str] | None = None,
-        use_structured_output: bool = False,
         additional_authorized_imports: list[str] | None = None,
         planning_interval: int | None = None,
         executor_type: str | None = "local",
         executor_kwargs: dict[str, Any] | None = None,
         max_print_outputs_length: int | None = None,
         stream_outputs: bool = False,
+        use_structured_generation_internally: bool = False,
+        grammar: dict[str, str] | None = None,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
-        self._use_structured_output = use_structured_output
-        if use_structured_output:
+        self.use__structure_internal_outputs = use_structured_generation_internally
+        if use_structured_generation_internally:
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("structured_code_agent.yaml").read_text()
             )
@@ -1391,8 +1391,8 @@ class CodeAgent(MultiStepAgent):
             prompt_templates = prompt_templates or yaml.safe_load(
                 importlib.resources.files("smolagents.prompts").joinpath("code_agent.yaml").read_text()
             )
-        if grammar and use_structured_output:
-            raise ValueError("You cannot use 'grammar' and 'use_structured_output' at the same time.")
+        if grammar and use_structured_generation_internally:
+            raise ValueError("You cannot use 'grammar' and 'use_structured_generation_internally' at the same time.")
         super().__init__(
             tools=tools,
             model=model,
@@ -1459,10 +1459,10 @@ class CodeAgent(MultiStepAgent):
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         try:
-            additional_args = {}
+            additional_args: dict[str, Any] = {}
             if self.grammar:
                 additional_args["grammar"] = self.grammar
-            if self._use_structured_output:
+            if self.use__structure_internal_outputs:
                 additional_args["response_format"] = CODEAGENT_RESPONSE_FORMAT
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
@@ -1517,7 +1517,7 @@ class CodeAgent(MultiStepAgent):
 
         ### Parse output ###
         try:
-            if self._use_structured_output:
+            if self.use__structure_internal_outputs:
                 code_action = json.loads(output_text)["code"]
                 code_action = extract_code_from_text(code_action) or code_action
             else:
