@@ -1153,7 +1153,11 @@ class TestCodeAgent:
 
         # Only structured output
         agent_with_structured = CodeAgent(
-            tools=[], model=MagicMock(), grammar=None, use_structured_output=True, verbosity_level=LogLevel.DEBUG
+            tools=[],
+            model=MagicMock(),
+            grammar=None,
+            use_structured_outputs_internally=True,
+            verbosity_level=LogLevel.DEBUG,
         )
         assert agent_with_structured.grammar is None
         assert agent_with_structured._use_structured_outputs_internally is True
