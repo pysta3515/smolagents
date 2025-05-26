@@ -79,7 +79,6 @@ def parse_arguments():
     parser.add_argument(
         "--push-answers-to-hub",
         action="store_true",
-        default=True,
         help="Push the answers to the hub",
     )
     parser.add_argument(
