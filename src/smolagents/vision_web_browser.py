@@ -27,20 +27,13 @@ search_request = """
 Please navigate to https://en.wikipedia.org/wiki/Chicago and give me a sentence containing the word "1992" that mentions a construction accident.
 """
 
-meteo_request = """
-Please navigate to a weather website and tell me the current weather conditions and forecast for Paris, France.
-Include the temperature, precipitation chances, and general weather conditions for today.
-"""
-
-
-
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run a web browser automation script with a specified model.")
     parser.add_argument(
         "prompt",
         type=str,
         nargs="?",  # Makes it optional
-        default=meteo_request,
+        default=github_request,
         help="The prompt to run with the agent",
     )
     parser.add_argument(
