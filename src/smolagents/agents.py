@@ -685,11 +685,8 @@ You have been provided with these additional arguments, that you can access usin
     def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | FinalOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
-        If `stream_outputs` is True, the method will forward intermediate
-        `ChatMessageStreamDelta` objects produced by the model while they are
-        generated, updating a rich `Live` display in real time. The actual
-        tool execution (or return of the final answer) only happens once the
-        model generation is complete.
+        Yields ChatMessageStreamDelta during the run if streaming is enabled.
+        At the end, yields either None if the step is not final, or the final answer.
         """
         raise NotImplementedError("This method should be implemented in child classes")
 
@@ -1196,11 +1193,8 @@ class ToolCallingAgent(MultiStepAgent):
     def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | FinalOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
-        If `stream_outputs` is True, the method will forward intermediate
-        `ChatMessageStreamDelta` objects produced by the model while they are
-        generated, updating a rich `Live` display in real time. The actual
-        tool execution (or return of the final answer) only happens once the
-        model generation is complete.
+        Yields ChatMessageStreamDelta during the run if streaming is enabled.
+        At the end, yields either None if the step is not final, or the final answer.
         """
         memory_messages = self.write_memory_to_messages()
 

@@ -1251,9 +1251,19 @@ class TestToolCallingAgent:
 
         model = MagicMock()
         model.generate.return_value = ChatMessage(
-            role="assistant", content="Code:\n```py\nfinal_answer(answer1='1', answer2='2')\n```"
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ChatMessageToolCall(
+                    id="call_0",
+                    type="function",
+                    function=ChatMessageToolCallDefinition(
+                        name="final_answer", arguments={"answer1": "1", "answer2": "2"}
+                    ),
+                )
+            ],
         )
-        agent = CodeAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
+        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
         answer = agent.run("Fake task.")
         assert answer == "1CUSTOM2"
 
