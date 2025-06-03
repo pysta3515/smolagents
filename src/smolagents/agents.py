@@ -1541,7 +1541,9 @@ class CodeAgent(MultiStepAgent):
         try:
             if self._use_structured_outputs_internally:
                 code_action = json.loads(output_text)["code"]
-                code_action = extract_code_from_text(code_action, code_parse_regex=self.code_parse_regex) or code_action
+                code_action = (
+                    extract_code_from_text(code_action, code_parse_regex=self.code_parse_regex) or code_action
+                )
             else:
                 code_action = parse_code_blobs(output_text, code_parse_regex=self.code_parse_regex)
             code_action = fix_final_answer_code(code_action)
