@@ -1194,7 +1194,11 @@ class ToolCallingAgent(MultiStepAgent):
     def initialize_system_prompt(self) -> str:
         system_prompt = populate_template(
             self.prompt_templates["system_prompt"],
-            variables={"tools": self.tools, "managed_agents": self.managed_agents, "instructions": self.instructions},
+            variables={
+                "tools": self.tools,
+                "managed_agents": self.managed_agents,
+                "custom_instructions": self.instructions,
+            },
         )
         return system_prompt
 
@@ -1562,7 +1566,7 @@ class CodeAgent(MultiStepAgent):
                     if "*" in self.authorized_imports
                     else str(self.authorized_imports)
                 ),
-                "instructions": self.instructions,
+                "custom_instructions": self.instructions,
             },
         )
         return system_prompt
