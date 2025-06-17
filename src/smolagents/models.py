@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ast
 import json
 import logging
 import os
@@ -27,7 +28,6 @@ from typing import TYPE_CHECKING, Any
 from .monitoring import TokenUsage
 from .tools import Tool
 from .utils import _is_package_available, encode_image_base64, make_image_url, parse_json_blob
-
 
 if TYPE_CHECKING:
     from transformers import StoppingCriteriaList
@@ -201,6 +201,7 @@ def get_clean_message_list(
     role_conversions: dict[MessageRole, MessageRole] | dict[str, str] = {},
     convert_images_to_image_urls: bool = False,
     flatten_messages_as_text: bool = False,
+    add_tool_call_to_assistant: bool = False,
 ) -> list[dict[str, str | list[dict]]]:
     """
     Subsequent messages with the same role will be concatenated to a single message.
@@ -249,6 +250,13 @@ def get_clean_message_list(
                     else:
                         output_message_list[-1]["content"].append(el)
         else:
+            if add_tool_call_to_assistant and message["role"] == MessageRole.TOOL_CALL:
+                assert output_message_list[-1]["role"] == MessageRole.ASSISTANT, "Tool call must be added to assistant"
+                tool_call = message["content"][0]["text"].split("Calling tools:\n[")[1].split("]")[0]
+                tool_call = ast.literal_eval(tool_call)["function"]
+                output_message_list[-1]["tool_calls"] = [tool_call]
+                continue
+
             if flatten_messages_as_text:
                 content = message["content"][0]["text"]
             else:
@@ -418,9 +426,7 @@ class Model:
         message.role = MessageRole.ASSISTANT  # Overwrite role if needed
         if not message.tool_calls:
             assert message.content is not None, "Message contains no content and no tool calls"
-            message.tool_calls = [
-                get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)
-            ]
+            message.tool_calls = [get_tool_call_from_text(message.content, self.tool_name_key, self.tool_arguments_key)]
         assert len(message.tool_calls) > 0, "No tool call was found in the model output"
         for tool_call in message.tool_calls:
             tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
