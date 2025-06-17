@@ -655,7 +655,7 @@ nested_answer()
 
     def test_planning_step_with_injected_memory(self):
         """Test that planning step uses update plan prompts when memory is injected before run."""
-        agent = CodeAgent(tools=[], planning_interval=1, model=FakeCodeModelPlanning())
+        agent = CodeAgent(tools=[], planning_interval=1, model=FakeCodeModelPlanning(), verbosity_level=1000)
         task = "Continuous task"
 
         # Inject memory before run
@@ -663,19 +663,21 @@ nested_answer()
         agent.memory.steps.append(previous_step)
 
         # Run the agent
-        agent.run(task, reset=False)
+        agent.run(task, reset=False, max_steps=2)
 
         # Verify that the planning step used update plan prompts
         planning_steps = [step for step in agent.memory.steps if isinstance(step, PlanningStep)]
         assert len(planning_steps) > 0
 
         # Check that the planning step's model input messages contain the injected memory
-        planning_step = planning_steps[0]
-        assert len(planning_step.model_input_messages) == 3  # system message + memory messages + user message
-        assert planning_step.model_input_messages[0]["role"] == "system"
-        assert task in planning_step.model_input_messages[0]["content"][0]["text"]
-        assert planning_step.model_input_messages[1]["role"] == "user"
-        assert "Previous user request" in planning_step.model_input_messages[1]["content"][0]["text"]
+        update_plan_step = planning_steps[0]
+        assert (
+            len(update_plan_step.model_input_messages) == 4
+        )  # system message + memory messages (2 task messages) + user message
+        assert update_plan_step.model_input_messages[0]["role"] == "system"
+        assert task in update_plan_step.model_input_messages[0]["content"][0]["text"]
+        assert update_plan_step.model_input_messages[1]["role"] == "user"
+        assert "Previous user request" in update_plan_step.model_input_messages[1]["content"][0]["text"]
 
 
 class CustomFinalAnswerTool(FinalAnswerTool):
