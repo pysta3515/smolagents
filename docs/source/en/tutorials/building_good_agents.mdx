@@ -158,7 +158,7 @@ Thus it cannot access the image again except by leveraging the path that was log
 
 The first step to debugging your agent is thus "Use a more powerful LLM". Alternatives like `Qwen2/5-72B-Instruct` wouldn't have made that mistake.
 
-### 2. Provide more guidance / more information
+### 2. Provide more information or specific instructions
 
 You can also use less powerful models, provided you guide them more effectively.
 
@@ -166,17 +166,17 @@ Put yourself in the shoes of your model: if you were the model solving the task,
 
 Would you need some added clarifications?
 
-To provide extra information, we do not recommend to change the system prompt right away: the default system prompt has many adjustments that you do not want to mess up except if you understand the prompt very well.
 Better ways to guide your LLM engine are:
-- If it's about the task to solve: add all these details to the task. The task could be 100s of pages long.
+- If the instruction si to always be given to the agent (as we generally understand a system prompt to work): you can pass it under argument `instructions` upon agent initialization.
+- If it's about a specific task to solve: add all these details to the task. The task could be 100s of pages long.
 - If it's about how to use tools: the description attribute of your tools.
 
 
-### 3. Change the system prompt (generally not advised)
+### 3. Change the prompt templates (generally not advised)
 
-If above clarifications are not sufficient, you can change the system prompt.
+If above clarifications are not sufficient, you can change the agent's prompt templates.
 
-Let's see how it works. For example, let us check the default system prompt for the [`CodeAgent`] (below version is shortened by skipping zero-shot examples).
+Let's see how it works. For example, let us check the default prompt templates for the [`CodeAgent`] (below version is shortened by skipping zero-shot examples).
 
 ```python
 print(agent.prompt_templates["system_prompt"])
@@ -390,6 +390,11 @@ agent.prompt_templates["system_prompt"] = agent.prompt_templates["system_prompt"
 ```
 
 This also works with the [`ToolCallingAgent`].
+
+But generally it's just simpler to pass argument `instructions` upon agent initalization, like:
+```py
+agent = CodeAgent(tools=[], model=InferenceClientModel(model_id=model_id), instructions="Always talk like a 5 year old.")
+```
 
 
 ### 4. Extra planning
