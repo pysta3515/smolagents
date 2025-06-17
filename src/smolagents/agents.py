@@ -492,6 +492,10 @@ You have been provided with these additional arguments, that you can access usin
                             self._validate_final_answer(output.output)
                         found_final_answer = True
                         final_answer = output.output
+
+                    # Yield streaming deltas
+                    if not isinstance(output, StepOutput):
+                        yield output
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
