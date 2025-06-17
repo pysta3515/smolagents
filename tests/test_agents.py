@@ -632,9 +632,14 @@ nested_answer()
         assert "Error raised in check" in str(agent.write_memory_to_messages())
 
         agent = CodeAgent(
-            model=FakeCodeModel(), tools=[], final_answer_checks=[lambda x: ("final_answer" in x.observations)]
+            model=FakeCodeModel(),
+            tools=[],
+            final_answer_checks=[lambda x, y: x == 7.2904],
+            verbosity_level=1000,
         )
-        agent.run("Dummy task.")
+        output = agent.run("Dummy task.")
+        assert output == 7.2904  # Check that output is correct
+        assert len([step for step in agent.memory.steps if isinstance(step, ActionStep)]) == 2
         assert "Error raised in check" not in str(agent.write_memory_to_messages())
 
     def test_generation_errors_are_raised(self):
