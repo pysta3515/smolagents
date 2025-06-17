@@ -142,7 +142,7 @@ planning:
     Then for the given task, develop a step-by-step high-level plan taking into account the above inputs and list of facts.
     This plan should involve individual tasks based on the available tools, that if executed correctly will yield the correct answer.
     Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
-    After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
+    After writing the final step of the plan, write the '<end_plan>' tag and stop there.
 
     You can leverage these tools, behaving like regular python functions:
     ```python
@@ -205,7 +205,7 @@ planning:
     This plan should involve individual tasks based on the available tools, that if executed correctly will yield the correct answer.
     Beware that you have {remaining_steps} steps remaining.
     Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
-    After writing the final step of the plan, write the '\n<end_plan>' tag and stop there.
+    After writing the final step of the plan, write the '<end_plan>' tag and stop there.
 
     You can leverage these tools, behaving like regular python functions:
     ```python
