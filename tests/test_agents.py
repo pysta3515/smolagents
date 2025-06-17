@@ -631,6 +631,12 @@ nested_answer()
         agent.run("Dummy task.")
         assert "Error raised in check" in str(agent.write_memory_to_messages())
 
+        agent = CodeAgent(
+            model=FakeCodeModel(), tools=[], final_answer_checks=[lambda x: ("final_answer" in x.observations)]
+        )
+        agent.run("Dummy task.")
+        assert "Error raised in check" not in str(agent.write_memory_to_messages())
+
     def test_generation_errors_are_raised(self):
         class FakeCodeModel(Model):
             def generate(self, messages, stop_sequences=None):
