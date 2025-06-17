@@ -67,6 +67,7 @@ from .models import (
     ChatMessageStreamDelta,
     MessageRole,
     Model,
+    agglomerate_stream_deltas,
     parse_json_if_needed,
 )
 from .monitoring import (
@@ -255,15 +256,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -317,9 +318,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -1218,34 +1219,15 @@ class ToolCallingAgent(MultiStepAgent):
                     tools_to_call_from=list(self.tools.values()),
                 )
 
-                model_output = ""
-                input_tokens, output_tokens = 0, 0
-                tool_calls = {}
-
+                chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
-                        if event.content is not None:
-                            model_output += event.content
-                            if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
-                                input_tokens = event.token_usage.input_tokens
-                        if event.tool_calls:
-                            tool_calls.update({tool_call.id: tool_call for tool_call in event.tool_calls})
-                        # Propagate the streaming delta
+                        chat_message_stream_deltas.append(event)
                         live.update(
-                            Markdown(model_output + "\n".join([str(tool_call) for tool_call in tool_calls.values()]))
+                            Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
                         )
                         yield event
-
-                chat_message = ChatMessage(
-                    role=MessageRole.ASSISTANT,
-                    content=model_output,
-                    token_usage=TokenUsage(
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                    ),
-                    tool_calls=list(tool_calls.values()),
-                )
+                chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
             else:
                 chat_message: ChatMessage = self.model.generate(
                     input_messages,
@@ -1588,24 +1570,15 @@ class CodeAgent(MultiStepAgent):
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
                 )
-                output_text = ""
-                input_tokens, output_tokens = 0, 0
+                chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
-                        if event.content is not None:
-                            output_text += event.content
-                            live.update(Markdown(output_text))
-                            if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
-                                input_tokens = event.token_usage.input_tokens
-                        assert isinstance(event, ChatMessageStreamDelta)
+                        chat_message_stream_deltas.append(event)
+                        live.update(
+                            Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
+                        )
                         yield event
-
-                chat_message = ChatMessage(
-                    role="assistant",
-                    content=output_text,
-                    token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
-                )
+                chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
                 memory_step.model_output_message = chat_message
                 output_text = chat_message.content
             else:
