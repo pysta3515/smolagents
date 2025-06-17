@@ -107,7 +107,6 @@ system_prompt: |-
   {%- endif %}
 
   {%- if custom_instructions %}
-  Here are custom instructions:
   {{custom_instructions}}
   {%- endif %}
 

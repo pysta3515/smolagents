@@ -169,7 +169,6 @@ system_prompt: |-
   10. Don't give up! You're in charge of solving the task, not providing directions to solve it.
 
   {%- if custom_instructions %}
-  Here are custom instructions:
   {{custom_instructions}}
   {%- endif %}
 
