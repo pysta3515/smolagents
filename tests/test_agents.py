@@ -655,7 +655,7 @@ nested_answer()
 
     def test_planning_step_with_injected_memory(self):
         """Test that planning step uses update plan prompts when memory is injected before run."""
-        agent = CodeAgent(tools=[], planning_interval=1, model=FakeCodeModelPlanning(), verbosity_level=1000)
+        agent = CodeAgent(tools=[], planning_interval=1, model=FakeCodeModelPlanning())
         task = "Continuous task"
 
         # Inject memory before run
@@ -672,8 +672,8 @@ nested_answer()
         # Check that the planning step's model input messages contain the injected memory
         update_plan_step = planning_steps[0]
         assert (
-            len(update_plan_step.model_input_messages) == 4
-        )  # system message + memory messages (2 task messages) + user message
+            len(update_plan_step.model_input_messages) == 3
+        )  # system message + memory messages (1 task message, the latest one is removed) + user message
         assert update_plan_step.model_input_messages[0]["role"] == "system"
         assert task in update_plan_step.model_input_messages[0]["content"][0]["text"]
         assert update_plan_step.model_input_messages[1]["role"] == "user"
