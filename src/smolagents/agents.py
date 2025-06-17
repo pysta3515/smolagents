@@ -1227,6 +1227,7 @@ class ToolCallingAgent(MultiStepAgent):
                             Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
                         )
                         yield event
+                print("CHAT MESSAGE STREAM DELTA:", chat_message_stream_deltas)
                 chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
             else:
                 chat_message: ChatMessage = self.model.generate(
@@ -1235,16 +1236,15 @@ class ToolCallingAgent(MultiStepAgent):
                     tools_to_call_from=list(self.tools.values()),
                 )
 
-                model_output = chat_message.content
                 self.logger.log_markdown(
-                    content=model_output if model_output else str(chat_message.raw),
+                    content=chat_message.content if chat_message.content else str(chat_message.raw),
                     title="Output message of the LLM:",
                     level=LogLevel.DEBUG,
                 )
 
             # Record model output
             memory_step.model_output_message = chat_message
-            memory_step.model_output = model_output
+            memory_step.model_output = chat_message.content
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e

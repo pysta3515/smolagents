@@ -48,6 +48,67 @@ from .utils.markers import require_run_all
 
 
 class TestModel:
+    def test_agglomerate_stream_deltas(self):
+        from smolagents.models import (
+            ChatMessageStreamDelta,
+            ChatMessageToolCallDefinition,
+            TokenUsage,
+            ToolCallStreamDelta,
+            agglomerate_stream_deltas,
+        )
+
+        stream_deltas = [
+            ChatMessageStreamDelta(
+                content="Hi",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallDefinition(arguments="", name="web_search", description=None),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content=" everyone",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallDefinition(arguments=' {"', name="web_search", description=None),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content=", it's",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallDefinition(
+                            arguments='query": "current pope name and date of birth"}',
+                            name="web_search",
+                            description=None,
+                        ),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content="",
+                tool_calls=None,
+                token_usage=TokenUsage(input_tokens=1348, output_tokens=24),
+            ),
+        ]
+        agglomerated_stream_delta = agglomerate_stream_deltas(stream_deltas)
+        assert agglomerated_stream_delta.content == "Hi everyone, it's"
+        assert (
+            agglomerated_stream_delta.tool_calls[0].function.arguments
+            == ' {"query": "current pope name and date of birth"}'
+        )
+        assert agglomerated_stream_delta.token_usage.total_tokens == 1372
+
     @pytest.mark.parametrize(
         "model_id, stop_sequences, should_contain_stop",
         [

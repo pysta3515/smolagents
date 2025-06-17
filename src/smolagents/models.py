@@ -152,6 +152,15 @@ class ToolCallStreamDelta:
     type: str | None = None
     function: ChatMessageToolCallDefinition | None = None
 
+    def convert_to_tool_call(self) -> ChatMessageToolCall:
+        assert self.type is not None
+        assert self.function is not None
+        return ChatMessageToolCall(
+            id=self.id or self.index,
+            type=self.type,
+            function=self.function,
+        )
+
 
 @dataclass
 class ChatMessageStreamDelta:
@@ -191,16 +200,15 @@ def agglomerate_stream_deltas(
         if stream_delta.tool_calls:
             for tool_call_delta in stream_delta.tool_calls:  # ?ormally there should be only one call at a time
                 # Extend accumulated_tool_calls list to accommodate the new tool call if needed
-                if tool_call_delta.index and tool_call_delta.index not in accumulated_tool_calls:
-                    accumulated_tool_calls[tool_call_delta.index] = ToolCallStreamDelta(
-                        id=None,
-                        type=None,
-                        function=ChatMessageToolCallDefinition(name="", arguments=""),
-                    )
-
+                if tool_call_delta.index is not None:
+                    if tool_call_delta.index not in accumulated_tool_calls:
+                        accumulated_tool_calls[tool_call_delta.index] = ToolCallStreamDelta(
+                            id=None,
+                            type=None,
+                            function=ChatMessageToolCallDefinition(name="", arguments=""),
+                        )
                     # Update the tool call at the specific index
                     tool_call = accumulated_tool_calls[tool_call_delta.index]
-
                     if tool_call_delta.id:
                         tool_call.id = tool_call_delta.id
                     if tool_call_delta.type:
@@ -210,11 +218,15 @@ def agglomerate_stream_deltas(
                             tool_call.function.name = tool_call_delta.function.name
                         if tool_call_delta.function.arguments:
                             tool_call.function.arguments += tool_call_delta.function.arguments
+                else:
+                    raise ValueError(f"Tool call index is not provided in tool delta: {tool_call_delta}")
 
     return ChatMessage(
         role=role,
         content=accumulated_content,
-        tool_calls=list(accumulated_tool_calls.values()),
+        tool_calls=[
+            tool_call_stream_delta.convert_to_tool_call() for tool_call_stream_delta in accumulated_tool_calls.values()
+        ],
         token_usage=TokenUsage(
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
@@ -1586,7 +1598,17 @@ class OpenAIServerModel(ApiModel):
                 if choice.delta:
                     yield ChatMessageStreamDelta(
                         content=choice.delta.content,
-                        tool_calls=[convert_tool_call_delta(delta) for delta in choice.delta.tool_calls],
+                        tool_calls=[
+                            ToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
                     )
                 else:
                     if not getattr(choice, "finish_reason", None):
