@@ -55,10 +55,9 @@ class FakeLLMModel(Model):
             return ChatMessage(
                 role="assistant",
                 content="""
-Code:
-```py
+<code>
 final_answer('This is the final answer.')
-```""",
+</code>""",
                 token_usage=TokenUsage(input_tokens=10, output_tokens=20) if self.give_token_usage else None,
             )
 
