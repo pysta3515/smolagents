@@ -204,10 +204,9 @@ class FakeCodeModel(Model):
                 role="assistant",
                 content="""
 Thought: I should multiply 2 by 3.6452. special_marker
-Code:
-```py
+<code>
 result = 2**3.6452
-```<end_code>
+</code>
 """,
             )
         else:  # We're at step 2
@@ -215,10 +214,9 @@ result = 2**3.6452
                 role="assistant",
                 content="""
 Thought: I can now answer the initial question
-Code:
-```py
+<code>
 final_answer(7.2904)
-```<end_code>
+</code>
 """,
             )
 
@@ -231,14 +229,13 @@ class FakeCodeModelError(Model):
                 role="assistant",
                 content="""
 Thought: I should multiply 2 by 3.6452. special_marker
-Code:
-```py
+<code>
 print("Flag!")
 def error_function():
     raise ValueError("error")
 
 error_function()
-```<end_code>
+</code>
 """,
             )
         else:  # We're at step 2
@@ -246,10 +243,9 @@ error_function()
                 role="assistant",
                 content="""
 Thought: I faced an error in the previous step.
-Code:
-```py
+<code>
 final_answer("got an error")
-```<end_code>
+</code>
 """,
             )
 
@@ -262,13 +258,12 @@ class FakeCodeModelSyntaxError(Model):
                 role="assistant",
                 content="""
 Thought: I should multiply 2 by 3.6452. special_marker
-Code:
-```py
+<code>
 a = 2
 b = a * 2
     print("Failing due to unexpected indent")
 print("Ok, calculation done!")
-```<end_code>
+</code>
 """,
             )
         else:  # We're at step 2
@@ -276,10 +271,9 @@ print("Ok, calculation done!")
                 role="assistant",
                 content="""
 Thought: I can now answer the initial question
-Code:
-```py
+<code>
 final_answer("got an error")
-```<end_code>
+</code>
 """,
             )
 
@@ -290,11 +284,10 @@ class FakeCodeModelImport(Model):
             role="assistant",
             content="""
 Thought: I can answer the question
-Code:
-```py
+<code>
 import numpy as np
 final_answer("got an error")
-```<end_code>
+</code>
 """,
         )
 
@@ -307,13 +300,12 @@ class FakeCodeModelFunctionDef(Model):
                 role="assistant",
                 content="""
 Thought: Let's define the function. special_marker
-Code:
-```py
+<code>
 import numpy as np
 
 def moving_average(x, w):
     return np.convolve(x, np.ones(w), 'valid') / w
-```<end_code>
+</code>
     """,
             )
         else:  # We're at step 2
@@ -321,12 +313,11 @@ def moving_average(x, w):
                 role="assistant",
                 content="""
 Thought: I can now answer the initial question
-Code:
-```py
+<code>
 x, w = [0, 1, 2, 3, 4, 5], 2
 res = moving_average(x, w)
 final_answer(res)
-```<end_code>
+</code>
 """,
             )
 
@@ -337,8 +328,7 @@ class FakeCodeModelSingleStep(Model):
             role="assistant",
             content="""
 Thought: I should multiply 2 by 3.6452. special_marker
-Code:
-```py
+<code>
 result = python_interpreter(code="2*3.6452")
 final_answer(result)
 ```
@@ -352,8 +342,7 @@ class FakeCodeModelNoReturn(Model):
             role="assistant",
             content="""
 Thought: I should multiply 2 by 3.6452. special_marker
-Code:
-```py
+<code>
 result = python_interpreter(code="2*3.6452")
 print(result)
 ```
@@ -548,7 +537,7 @@ class TestAgent:
 
         assert "New run" in str_output
         assert 'final_answer("got' in str_output
-        assert "```<end_code>" in str_output
+        assert "</code>" in str_output
 
         agent = ToolCallingAgent(tools=[PythonInterpreterTool()], model=FakeToolCallModel(), verbosity_level=0)
         agent.logger = agent_logger
@@ -565,13 +554,12 @@ class TestAgent:
             def generate(self, messages, stop_sequences=None):
                 return ChatMessage(
                     role="assistant",
-                    content="""Code:
-```py
+                    content="""<code>
 def nested_answer():
     final_answer("Correct!")
 
 nested_answer()
-```<end_code>""",
+</code>""",
                 )
 
         agent = CodeAgent(tools=[], model=FakeCodeModelFinalAnswer())
@@ -1240,7 +1228,7 @@ class TestToolCallingAgent:
 
         class FakeCodeModel(Model):
             def generate(self, messages, stop_sequences=None):
-                return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
+                return ChatMessage(role="assistant", content="<code>\nfinal_answer(fake_tool_1())\n</code>")
 
         agent = CodeAgent(tools=[fake_tool_1], model=FakeCodeModel())
 
@@ -1467,7 +1455,7 @@ class TestCodeAgent:
     def test_errors_logging(self):
         class FakeCodeModel(Model):
             def generate(self, messages, stop_sequences=None):
-                return ChatMessage(role="assistant", content="Code:\n```py\nsecret=3;['1', '2'][secret]\n```")
+                return ChatMessage(role="assistant", content="<code>\nsecret=3;['1', '2'][secret]\n</code>")
 
         agent = CodeAgent(tools=[], model=FakeCodeModel(), verbosity_level=1)
 
@@ -1544,7 +1532,7 @@ class TestCodeAgent:
 
         class FakeCodeModel(Model):
             def generate(self, messages, stop_sequences=None):
-                return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
+                return ChatMessage(role="assistant", content="<code>\nfinal_answer(fake_tool_1())\n</code>")
 
         agent = CodeAgent(tools=[fake_tool_1], model=FakeCodeModel())
 
@@ -1668,7 +1656,7 @@ class TestCodeAgent:
 
         model = MagicMock()
         model.generate.return_value = ChatMessage(
-            role="assistant", content="Code:\n```py\nfinal_answer(answer1='1', answer2='2')\n```"
+            role="assistant", content="<code>\nfinal_answer(answer1='1', answer2='2')\n</code>"
         )
         agent = CodeAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
         answer = agent.run("Fake task.")
@@ -1786,10 +1774,9 @@ class TestMultiAgents:
                             role="assistant",
                             content="""
 Thought: Let's call our search agent.
-Code:
-```py
+<code>
 result = search_agent("Who is the current US president?")
-```<end_code>
+</code>
 """,
                         )
                     else:
@@ -1798,10 +1785,9 @@ result = search_agent("Who is the current US president?")
                             role="assistant",
                             content="""
 Thought: Let's return the report.
-Code:
-```py
+<code>
 final_answer("Final report.")
-```<end_code>
+</code>
 """,
                         )
 
