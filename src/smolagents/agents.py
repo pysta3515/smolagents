@@ -110,7 +110,7 @@ def populate_template(template: str, variables: dict[str, Any]) -> str:
 
 
 @dataclass
-class StepOutput:
+class ActionOutput:
     output: Any
     is_final_answer: bool
 
@@ -452,9 +452,9 @@ You have been provided with these additional arguments, that you can access usin
     def _run_stream(
         self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
     ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep | ChatMessageStreamDelta]:
-        found_final_answer = False
         self.step_number = 1
-        while not found_final_answer and self.step_number <= max_steps:
+        returned_final_answer = False
+        while not returned_final_answer and self.step_number <= max_steps:
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
 
@@ -487,15 +487,16 @@ You have been provided with these additional arguments, that you can access usin
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
                 for output in self._step_stream(action_step):
-                    if isinstance(output, StepOutput) and output.is_final_answer:
+                    # Yield streaming deltas
+                    if not isinstance(output, ActionOutput):
+                        yield output
+
+                    if isinstance(output, ActionOutput) and output.is_final_answer:
                         if self.final_answer_checks:
                             self._validate_final_answer(output.output)
-                        found_final_answer = True
+                        returned_final_answer = True
+                        action_step.is_final_answer = True
                         final_answer = output.output
-
-                    # Yield streaming deltas
-                    if not isinstance(output, StepOutput):
-                        yield output
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
@@ -508,7 +509,7 @@ You have been provided with these additional arguments, that you can access usin
                 yield action_step
                 self.step_number += 1
 
-        if not found_final_answer and self.step_number == max_steps + 1:
+        if not returned_final_answer and self.step_number == max_steps + 1:
             final_answer = self._handle_max_steps_reached(task, images)
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
@@ -682,7 +683,7 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | StepOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1199,7 +1200,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | StepOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1287,7 +1288,7 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step (`ActionStep)`: Memory ActionStep to update with results.
 
         Yields:
-            `StepOutput`: The final output of tool execution.
+            `ActionOutput`: The final output of tool execution.
         """
         model_outputs = []
         tool_calls = []
@@ -1340,14 +1341,14 @@ class ToolCallingAgent(MultiStepAgent):
             if len(parallel_calls) == 1:
                 # If there's only one call, process it directly
                 observations.append(process_single_tool_call(parallel_calls[0]))
-                yield StepOutput(output=None, is_final_answer=False)
+                yield ActionOutput(output=None, is_final_answer=False)
             else:
                 # If multiple tool calls, process them in parallel
                 with ThreadPoolExecutor(self.max_tool_threads) as executor:
                     futures = [executor.submit(process_single_tool_call, call_info) for call_info in parallel_calls]
                     for future in as_completed(futures):
                         observations.append(future.result())
-                        yield StepOutput(output=None, is_final_answer=False)
+                        yield ActionOutput(output=None, is_final_answer=False)
 
         # Process final_answer call if present
         if final_answer_call:
@@ -1377,7 +1378,7 @@ class ToolCallingAgent(MultiStepAgent):
                     level=LogLevel.INFO,
                 )
             memory_step.action_output = final_answer
-            yield StepOutput(output=final_answer, is_final_answer=True)
+            yield ActionOutput(output=final_answer, is_final_answer=True)
 
         # Update memory step with all results
         if model_outputs:
@@ -1569,7 +1570,7 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | StepOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1699,7 +1700,7 @@ class CodeAgent(MultiStepAgent):
         ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
-        yield StepOutput(output=output, is_final_answer=is_final_answer)
+        yield ActionOutput(output=output, is_final_answer=is_final_answer)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.

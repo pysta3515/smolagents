@@ -61,6 +61,7 @@ class ActionStep(MemoryStep):
     observations_images: list["PIL.Image.Image"] | None = None
     action_output: Any = None
     token_usage: TokenUsage | None = None
+    is_final_answer: bool = False
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually
