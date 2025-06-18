@@ -1854,7 +1854,6 @@ __all__ = [
     "TransformersModel",
     "ApiModel",
     "InferenceClientModel",
-    "HfApiModel",
     "LiteLLMModel",
     "LiteLLMRouterModel",
     "OpenAIServerModel",
