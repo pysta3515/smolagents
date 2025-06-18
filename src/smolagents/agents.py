@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, Union
 
 import jinja2
 import yaml
@@ -65,6 +65,7 @@ from .models import (
     CODEAGENT_RESPONSE_FORMAT,
     ChatMessage,
     ChatMessageStreamDelta,
+    ChatMessageToolCall,
     MessageRole,
     Model,
     agglomerate_stream_deltas,
@@ -202,6 +203,16 @@ class RunResult:
     messages: list[dict]
     token_usage: TokenUsage | None
     timing: Timing
+
+
+StreamEvent: TypeAlias = Union[
+    ChatMessageStreamDelta,
+    ChatMessageToolCall,
+    FinalOutput,
+    PlanningStep,
+    ActionStep,
+    FinalAnswerStep,
+]
 
 
 class MultiStepAgent(ABC):
@@ -1258,7 +1269,7 @@ class ToolCallingAgent(MultiStepAgent):
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
         yield from self.process_tool_calls(chat_message, memory_step)
 
-    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep):
+    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep) -> Generator[StreamEvent]:
         """Process tool calls from the model output and update agent memory.
 
         Args:
@@ -1274,6 +1285,8 @@ class ToolCallingAgent(MultiStepAgent):
 
         final_answer_call = None
         parallel_calls = []
+        for tool_call in chat_message.tool_calls:
+            yield tool_call
         for tool_call in chat_message.tool_calls:
             tool_name = tool_call.function.name
             tool_arguments = tool_call.function.arguments

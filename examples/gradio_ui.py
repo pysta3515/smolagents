@@ -1,7 +1,7 @@
-from smolagents import GradioUI, ToolCallingAgent, TransformersModel, WebSearchTool
+from smolagents import CodeAgent, GradioUI, TransformersModel, WebSearchTool
 
 
-agent = ToolCallingAgent(
+agent = CodeAgent(
     tools=[WebSearchTool()],
     model=TransformersModel(model_id="HuggingFaceTB/SmolLM2-1.7B-Instruct"),
     verbosity_level=1,
@@ -11,5 +11,5 @@ agent = ToolCallingAgent(
     step_callbacks=[],
     stream_outputs=True,
 )
-
+print(agent.initialize_system_prompt())
 GradioUI(agent, file_upload_folder="./data").launch()
