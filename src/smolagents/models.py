@@ -1144,8 +1144,6 @@ class LiteLLMModel(ApiModel):
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
-        if tools_to_call_from:
-            raise NotImplementedError("Streaming is not yet supported for tool calling")
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -1159,11 +1157,6 @@ class LiteLLMModel(ApiModel):
             **kwargs,
         )
         for event in self.client.completion(**completion_kwargs, stream=True, stream_options={"include_usage": True}):
-            if event.choices:
-                if event.choices[0].delta.content:
-                    yield ChatMessageStreamDelta(
-                        content=event.choices[0].delta.content,
-                    )
             if getattr(event, "usage", None):
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens
@@ -1174,6 +1167,26 @@ class LiteLLMModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                     ),
                 )
+            if event.choices:
+                choice = event.choices[0]
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
+                    if not getattr(choice, "finish_reason", None):
+                        raise ValueError(f"No content or tool calls in event: {event}")
 
 
 class LiteLLMRouterModel(LiteLLMModel):
@@ -1419,66 +1432,9 @@ class InferenceClientModel(ApiModel):
             convert_images_to_image_urls=True,
             **kwargs,
         )
-
-        # Track accumulated tool calls and content
-        accumulated_tool_calls = {}
-        current_content = ""
-
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
-            if event.choices:
-                choice = event.choices[0]
-                if choice.delta is None:
-                    if not getattr(choice, "finish_reason", None):
-                        raise ValueError(f"No content or tool calls in event: {event}")
-                else:
-                    delta = choice.delta
-
-                    # Handle content streaming
-                    if delta.content:
-                        current_content += delta.content
-                        yield ChatMessageStreamDelta(content=delta.content)
-
-                    # Handle tool call streaming
-                    if delta.tool_calls:
-                        for tool_call_delta in delta.tool_calls:  # ?ormally there should be only one call at a time
-                            # Extend accumulated_tool_calls list to accommodate the new tool call if needed
-                            if tool_call_delta.index not in accumulated_tool_calls:
-                                accumulated_tool_calls[tool_call_delta.index] = {
-                                    "id": None,
-                                    "type": None,
-                                    "function": {"name": None, "arguments": ""},
-                                }
-
-                            # Update the tool call at the specific index
-                            tool_call = accumulated_tool_calls[tool_call_delta.index]
-
-                            if tool_call_delta.id:
-                                tool_call["id"] = tool_call_delta.index
-                            if tool_call_delta.type:
-                                tool_call["type"] = tool_call_delta.type
-                            if tool_call_delta.function:
-                                if tool_call_delta.function.name:
-                                    tool_call["function"]["name"] = tool_call_delta.function.name
-                                if tool_call_delta.function.arguments:
-                                    tool_call["function"]["arguments"] += tool_call_delta.function.arguments
-
-                        yield ChatMessageStreamDelta(
-                            content=current_content,
-                            tool_calls=[
-                                ToolCallStreamDelta(
-                                    id=tool_call["id"],
-                                    type=tool_call["type"],
-                                    function=ChatMessageToolCallDefinition(
-                                        name=tool_call["function"]["name"],
-                                        arguments=tool_call["function"]["arguments"],
-                                    ),
-                                )
-                                for tool_call in accumulated_tool_calls.values()
-                            ],
-                        )
-
             if event.usage:
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens
@@ -1489,15 +1445,26 @@ class InferenceClientModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                     ),
                 )
-
-
-class HfApiModel(InferenceClientModel):
-    def __new__(cls, *args, **kwargs):
-        warnings.warn(
-            "HfApiModel was renamed to InferenceClientModel in version 1.14.0 and will be removed in 1.17.0.",
-            FutureWarning,
-        )
-        return super().__new__(cls)
+            if event.choices:
+                choice = event.choices[0]
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
+                    if not getattr(choice, "finish_reason", None):
+                        raise ValueError(f"No content or tool calls in event: {event}")
 
 
 class OpenAIServerModel(ApiModel):

@@ -1,9 +1,9 @@
-from smolagents import GradioUI, OpenAIServerModel, ToolCallingAgent, WebSearchTool
+from smolagents import GradioUI, ToolCallingAgent, TransformersModel, WebSearchTool
 
 
 agent = ToolCallingAgent(
     tools=[WebSearchTool()],
-    model=OpenAIServerModel(model_id="gpt-4o"),
+    model=TransformersModel(model_id="HuggingFaceTB/SmolLM2-1.7B-Instruct"),
     verbosity_level=1,
     # planning_interval=3,
     name="example_agent",
