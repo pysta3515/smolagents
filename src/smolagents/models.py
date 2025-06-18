@@ -22,7 +22,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
 from threading import Thread
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from .monitoring import TokenUsage
 from .tools import Tool
@@ -121,6 +121,17 @@ class ChatMessage:
     def dict(self):
         return get_dict_from_nested_dataclasses(self)
 
+    def render_as_markdown(self) -> str:
+        rendered = self.content or ""
+        if self.tool_calls:
+            rendered += "\n".join(
+                [
+                    json.dumps({"tool": tool.function.name, "arguments": tool.function.arguments})
+                    for tool in self.tool_calls
+                ]
+            )
+        return rendered
+
 
 def parse_json_if_needed(arguments: str | dict) -> str | dict:
     if isinstance(arguments, dict):
@@ -159,6 +170,64 @@ class MessageRole(str, Enum):
     @classmethod
     def roles(cls):
         return [r.value for r in cls]
+
+
+class Message(TypedDict):
+    role: MessageRole
+    content: str | list[dict[str, Any]]
+
+
+def agglomerate_stream_deltas(
+    stream_deltas: list[ChatMessageStreamDelta], role: MessageRole = MessageRole.ASSISTANT
+) -> ChatMessage:
+    """
+    Agglomerate a list of stream deltas into a single stream delta.
+    """
+    accumulated_tool_calls: dict[int, ToolCallStreamDelta] = {}
+    accumulated_content = ""
+    total_input_tokens = 0
+    total_output_tokens = 0
+    for stream_delta in stream_deltas:
+        if stream_delta.token_usage:
+            total_input_tokens += stream_delta.token_usage.input_tokens
+            total_output_tokens += stream_delta.token_usage.output_tokens
+        if stream_delta.content:
+            accumulated_content += stream_delta.content
+        if stream_delta.tool_calls:
+            for tool_call_delta in stream_delta.tool_calls:  # ?ormally there should be only one call at a time
+                # Extend accumulated_tool_calls list to accommodate the new tool call if needed
+                if tool_call_delta.index is not None:
+                    if tool_call_delta.index not in accumulated_tool_calls:
+                        accumulated_tool_calls[tool_call_delta.index] = ToolCallStreamDelta(
+                            id=tool_call_delta.id,
+                            type=tool_call_delta.type,
+                            function=ChatMessageToolCallDefinition(name="", arguments=""),
+                        )
+                    # Update the tool call at the specific index
+                    tool_call = accumulated_tool_calls[tool_call_delta.index]
+                    if tool_call_delta.id:
+                        tool_call.id = tool_call_delta.id
+                    if tool_call_delta.type:
+                        tool_call.type = tool_call_delta.type
+                    if tool_call_delta.function:
+                        if tool_call_delta.function.name:
+                            tool_call.function.name = tool_call_delta.function.name
+                        if tool_call_delta.function.arguments:
+                            tool_call.function.arguments += tool_call_delta.function.arguments
+                else:
+                    raise ValueError(f"Tool call index is not provided in tool delta: {tool_call_delta}")
+
+    return ChatMessage(
+        role=role,
+        content=accumulated_content,
+        tool_calls=[
+            tool_call_stream_delta.convert_to_tool_call() for tool_call_stream_delta in accumulated_tool_calls.values()
+        ],
+        token_usage=TokenUsage(
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+        ),
+    )
 
 
 tool_role_conversions = {
@@ -385,13 +454,40 @@ class Model:
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[Message],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> ChatMessage:
         """Process the input messages and return the model's response.
+
+        Parameters:
+            messages (`list[dict[str, str | list[dict]]] | list[ChatMessage]`):
+                A list of message dictionaries to be processed. Each dictionary should have the structure `{"role": "user/system", "content": "message content"}`.
+            stop_sequences (`List[str]`, *optional*):
+                A list of strings that will stop the generation if encountered in the model's output.
+            response_format (`dict[str, str]`, *optional*):
+                The response format to use in the model's response.
+            tools_to_call_from (`List[Tool]`, *optional*):
+                A list of tools that the model can use to generate responses.
+            **kwargs:
+                Additional keyword arguments to be passed to the underlying model.
+
+        Returns:
+            `ChatMessage`: A chat message object containing the model's response.
+        """
+        raise NotImplementedError("This method must be implemented in child classes")
+
+    def generat_stream(
+        self,
+        messages: list[Message],
+        stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
+        tools_to_call_from: list[Tool] | None = None,
+        **kwargs,
+    ) -> ChatMessage:
+        """Process the input messages and return the model's response in streaming mode.
 
         Parameters:
             messages (`list[dict[str, str | list[dict]]] | list[ChatMessage]`):
