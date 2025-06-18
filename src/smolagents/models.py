@@ -153,7 +153,6 @@ class ToolCallStreamDelta:
     function: ChatMessageToolCallDefinition | None = None
 
     def convert_to_tool_call(self) -> ChatMessageToolCall:
-        assert self.type is not None
         assert self.function is not None
         return ChatMessageToolCall(
             id=self.id or self.index,
@@ -203,8 +202,8 @@ def agglomerate_stream_deltas(
                 if tool_call_delta.index is not None:
                     if tool_call_delta.index not in accumulated_tool_calls:
                         accumulated_tool_calls[tool_call_delta.index] = ToolCallStreamDelta(
-                            id=None,
-                            type=None,
+                            id=tool_call_delta.id,
+                            type=tool_call_delta.type,
                             function=ChatMessageToolCallDefinition(name="", arguments=""),
                         )
                     # Update the tool call at the specific index

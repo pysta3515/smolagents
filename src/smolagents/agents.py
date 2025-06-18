@@ -1227,7 +1227,6 @@ class ToolCallingAgent(MultiStepAgent):
                             Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
                         )
                         yield event
-                print("CHAT MESSAGE STREAM DELTA:", chat_message_stream_deltas)
                 chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
             else:
                 chat_message: ChatMessage = self.model.generate(
