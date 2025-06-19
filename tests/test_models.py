@@ -395,7 +395,7 @@ class TestLiteLLMRouterModel:
             {"model_name": "llama-3.3-70b", "litellm_params": {"model": "groq/llama-3.3-70b"}},
             {"model_name": "llama-3.3-70b", "litellm_params": {"model": "cerebras/llama-3.3-70b"}},
         ]
-        with patch("litellm.Router") as mock_router:
+        with patch("litellm.router.Router") as mock_router:
             router_model = LiteLLMRouterModel(
                 model_id="model-group-1", model_list=model_list, client_kwargs={"routing_strategy": "simple-shuffle"}
             )
