@@ -150,8 +150,8 @@ def test_action_step_to_messages():
     assert "image" in image_content
 
     observation_message = messages[3]
-    assert observation_message["role"] == MessageRole.TOOL_RESPONSE
-    assert "Observation:\nThis is a nice observation" in observation_message["content"][0]["text"]
+    assert observation_message.role == MessageRole.TOOL_RESPONSE
+    assert "Observation:\nThis is a nice observation" in observation_message.content[0]["text"]
 
 
 def test_action_step_to_messages_no_tool_calls_with_observations():
@@ -171,8 +171,8 @@ def test_action_step_to_messages_no_tool_calls_with_observations():
     messages = action_step.to_messages()
     assert len(messages) == 1
     observation_message = messages[0]
-    assert observation_message["role"] == MessageRole.TOOL_RESPONSE
-    assert "Observation:\nThis is an observation." in observation_message["content"][0]["text"]
+    assert observation_message.role == MessageRole.TOOL_RESPONSE
+    assert "Observation:\nThis is an observation." in observation_message.content[0]["text"]
 
 
 def test_planning_step_to_messages():
