@@ -27,7 +27,6 @@ from smolagents.models import (
     AzureOpenAIServerModel,
     ChatMessage,
     ChatMessageToolCall,
-    HfApiModel,
     InferenceClientModel,
     LiteLLMModel,
     LiteLLMRouterModel,
@@ -284,9 +283,9 @@ class TestInferenceClientModel:
         messages = [{"role": "user", "content": "Test message"}]
         _ = model(messages)
         # Verify that the role conversion was applied
-        assert model.client.chat_completion.call_args.kwargs["messages"][0]["role"] == "system", (
-            "role conversion should be applied"
-        )
+        assert (
+            model.client.chat_completion.call_args.kwargs["messages"][0]["role"] == "system"
+        ), "role conversion should be applied"
 
     def test_init_model_with_tokens(self):
         model = InferenceClientModel(model_id="test-model", token="abc")
@@ -330,21 +329,6 @@ class TestInferenceClientModel:
         messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}]}]
         for el in model.generate_stream(messages, stop_sequences=["great"]):
             assert el.content is not None
-
-
-class TestHfApiModel:
-    def test_deprecation_warning(self):
-        """Test that HfApiModel raises a deprecation warning when instantiated."""
-        # Should raise FutureWarning with specific message
-        with pytest.warns(
-            FutureWarning,
-            match="HfApiModel was renamed to InferenceClientModel in version 1.14.0 and will be removed in 1.17.0.",
-        ):
-            model = HfApiModel(model_id="test-model")
-        # Verify it returns an instance of InferenceClientModel
-        assert isinstance(model, InferenceClientModel)
-        # Verify the model_id was properly passed through
-        assert model.model_id == "test-model"
 
 
 class TestLiteLLMModel:

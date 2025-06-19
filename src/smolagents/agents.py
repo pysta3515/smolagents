@@ -53,7 +53,6 @@ from .memory import (
     ActionStep,
     AgentMemory,
     FinalAnswerStep,
-    Message,
     PlanningStep,
     SystemPromptStep,
     TaskStep,
@@ -277,15 +276,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert (
-                not missing_keys
-            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            assert not missing_keys, (
+                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
+            )
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert (
-                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
-                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
+                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                        )
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -339,9 +338,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(
-                agent.name and agent.description for agent in managed_agents
-            ), "All managed agents need both a name and a description!"
+            assert all(agent.name and agent.description for agent in managed_agents), (
+                "All managed agents need both a name and a description!"
+            )
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -568,18 +567,13 @@ You have been provided with these additional arguments, that you can access usin
         start_time = time.time()
         if is_first_step:
             input_messages = [
-                {
-                    "role": MessageRole.USER,
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": populate_template(
-                                self.prompt_templates["planning"]["initial_plan"],
-                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
-                            ),
-                        }
-                    ],
-                }
+                ChatMessage(
+                    role=MessageRole.USER,
+                    content=populate_template(
+                        self.prompt_templates["planning"]["initial_plan"],
+                        variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
+                    ),
+                )
             ]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 plan_message_content = ""
@@ -598,8 +592,12 @@ You have been provided with these additional arguments, that you can access usin
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
                 plan_message_content = plan_message.content
                 input_tokens, output_tokens = (
-                    plan_message.token_usage.input_tokens,
-                    plan_message.token_usage.output_tokens,
+                    (
+                        plan_message.token_usage.input_tokens,
+                        plan_message.token_usage.output_tokens,
+                    )
+                    if plan_message.token_usage
+                    else (None, None)
                 )
             plan = textwrap.dedent(
                 f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
@@ -608,34 +606,24 @@ You have been provided with these additional arguments, that you can access usin
             # Summary mode removes the system prompt and previous planning messages output by the model.
             # Removing previous planning messages avoids influencing too much the new plan.
             memory_messages = self.write_memory_to_messages(summary_mode=True)
-            plan_update_pre = {
-                "role": MessageRole.SYSTEM,
-                "content": [
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
-                        ),
-                    }
-                ],
-            }
-            plan_update_post = {
-                "role": MessageRole.USER,
-                "content": [
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["planning"]["update_plan_post_messages"],
-                            variables={
-                                "task": task,
-                                "tools": self.tools,
-                                "managed_agents": self.managed_agents,
-                                "remaining_steps": (self.max_steps - step),
-                            },
-                        ),
-                    }
-                ],
-            }
+            plan_update_pre = ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=populate_template(
+                    self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
+                ),
+            )
+            plan_update_post = ChatMessage(
+                role=MessageRole.USER,
+                content=populate_template(
+                    self.prompt_templates["planning"]["update_plan_post_messages"],
+                    variables={
+                        "task": task,
+                        "tools": self.tools,
+                        "managed_agents": self.managed_agents,
+                        "remaining_steps": (self.max_steps - step),
+                    },
+                ),
+            )
             # remove last message from memory_messages because it is the current task
             input_messages = [plan_update_pre] + memory_messages[:-1] + [plan_update_post]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
@@ -693,7 +681,7 @@ You have been provided with these additional arguments, that you can access usin
     def write_memory_to_messages(
         self,
         summary_mode: bool = False,
-    ) -> list[Message]:
+    ) -> list[ChatMessage]:
         """
         Reads past llm_outputs, actions, and observations or errors from the memory into a series of messages
         that can be used as input to the LLM. Adds a number of keywords (such as PLAN, error, etc) to help
@@ -752,32 +740,27 @@ You have been provided with these additional arguments, that you can access usin
             `str`: Final answer to the task.
         """
         messages = [
-            {
-                "role": MessageRole.SYSTEM,
-                "content": [
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=[
                     {
                         "type": "text",
                         "text": self.prompt_templates["final_answer"]["pre_messages"],
                     }
                 ],
-            }
+            )
         ]
         if images:
-            messages[0]["content"].append({"type": "image"})
+            messages[0].content += [{"type": "image", "image": image} for image in images]
         messages += self.write_memory_to_messages()[1:]
-        messages += [
-            {
-                "role": MessageRole.USER,
-                "content": [
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
-                        ),
-                    }
-                ],
-            }
-        ]
+        messages.append(
+            ChatMessage(
+                role=MessageRole.USER,
+                content=populate_template(
+                    self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
+                ),
+            )
+        )
         try:
             chat_message: ChatMessage = self.model.generate(messages)
             return chat_message

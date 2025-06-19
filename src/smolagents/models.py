@@ -666,9 +666,7 @@ class MLXModel(Model):
     >>> messages = [
     ...     {
     ...         "role": "user",
-    ...         "content": [
-    ...             {"type": "text", "text": "Explain quantum mechanics in simple terms."}
-    ...         ]
+    ...         "content": "Explain quantum mechanics in simple terms."
     ...     }
     ... ]
     >>> response = engine(messages, stop_sequences=["END"])
