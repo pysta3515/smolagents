@@ -122,7 +122,7 @@ class ChatMessage:
         return get_dict_from_nested_dataclasses(self)
 
     def render_as_markdown(self) -> str:
-        rendered = self.content or ""
+        rendered = str(self.content) or ""
         if self.tool_calls:
             rendered += "\n".join(
                 [
