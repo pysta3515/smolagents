@@ -555,9 +555,9 @@ def test_get_clean_message_list_basic():
     result = get_clean_message_list(messages)
     assert len(result) == 2
     assert result[0].role == "user"
-    assert result[0].content[0].text == "Hello!"
+    assert result[0].content[0]["text"] == "Hello!"
     assert result[1].role == "assistant"
-    assert result[1].content[0].text == "Hi there!"
+    assert result[1].content[0]["text"] == "Hi there!"
 
 
 def test_get_clean_message_list_role_conversions():
@@ -568,9 +568,9 @@ def test_get_clean_message_list_role_conversions():
     result = get_clean_message_list(messages, role_conversions={"tool-call": "assistant", "tool-response": "user"})
     assert len(result) == 2
     assert result[0].role == "assistant"
-    assert result[0].content[0].text == "Calling tool..."
+    assert result[0].content[0]["text"] == "Calling tool..."
     assert result[1].role == "user"
-    assert result[1].content[0].text == "Tool response"
+    assert result[1].content[0]["text"] == "Tool response"
 
 
 @pytest.mark.parametrize(
