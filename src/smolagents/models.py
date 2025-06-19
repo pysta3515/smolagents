@@ -182,7 +182,6 @@ def agglomerate_stream_deltas(
     accumulated_content = ""
     total_input_tokens = 0
     total_output_tokens = 0
-    print("STREAMDELTA2", stream_deltas, "oVER")
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
@@ -275,7 +274,7 @@ def get_clean_message_list(
     role_conversions: dict[MessageRole, MessageRole] | dict[str, str] = {},
     convert_images_to_image_urls: bool = False,
     flatten_messages_as_text: bool = False,
-) -> list[ChatMessage]:
+) -> list[dict[str, Any]]:
     """
     Subsequent messages with the same role will be concatenated to a single message.
     output_message_list is a list of messages that will be used to generate the final message that is chat template compatible with transformers LLM chat template.
@@ -286,7 +285,7 @@ def get_clean_message_list(
         convert_images_to_image_urls (`bool`, default `False`): Whether to convert images to image URLs.
         flatten_messages_as_text (`bool`, default `False`): Whether to flatten messages as text.
     """
-    output_message_list: list[ChatMessage] = []
+    output_message_list: list[dict[str, Any]] = []
     message_list = deepcopy(message_list)  # Avoid modifying the original list
     for message in message_list:
         role = message.role
@@ -311,23 +310,28 @@ def get_clean_message_list(
                     else:
                         element["image"] = encode_image_base64(element["image"])
 
-        if len(output_message_list) > 0 and message.role == output_message_list[-1].role:
+        if len(output_message_list) > 0 and message.role == output_message_list[-1]["role"]:
             assert isinstance(message.content, list), "Error: wrong content:" + str(message.content)
             if flatten_messages_as_text:
-                output_message_list[-1].content += "\n" + message.content[0]["text"]
+                output_message_list[-1]["content"] += "\n" + message.content[0]["text"]
             else:
                 for el in message.content:
-                    if el["type"] == "text" and output_message_list[-1].content[-1]["type"] == "text":
+                    if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
                         # Merge consecutive text messages rather than creating new ones
-                        output_message_list[-1].content[-1]["text"] += "\n" + el["text"]
+                        output_message_list[-1]["content"][-1]["text"] += "\n" + el["text"]
                     else:
-                        output_message_list[-1].content.append(el)
+                        output_message_list[-1]["content"].append(el)
         else:
             if flatten_messages_as_text:
                 content = message.content[0]["text"]
             else:
                 content = message.content
-            output_message_list.append(ChatMessage(role=message.role, content=content))
+            output_message_list.append(
+                {
+                    "role": message.role,
+                    "content": content,
+                }
+            )
     return output_message_list
 
 

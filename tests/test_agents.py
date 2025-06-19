@@ -667,7 +667,7 @@ nested_answer()
             len(update_plan_step.model_input_messages) == 3
         )  # system message + memory messages (1 task message, the latest one is removed) + user message
         assert update_plan_step.model_input_messages[0].role == "system"
-        assert task in update_plan_step.model_input_messages[0].content
+        assert task in update_plan_step.model_input_messages[0].content[0]["text"]
         assert update_plan_step.model_input_messages[1].role == "user"
         assert "Previous user request" in update_plan_step.model_input_messages[1].content[0]["text"]
 
