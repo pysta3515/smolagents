@@ -1292,7 +1292,6 @@ class ToolCallingAgent(MultiStepAgent):
         assert chat_message.tool_calls is not None
         for tool_call in chat_message.tool_calls:
             yield tool_call
-        for tool_call in chat_message.tool_calls:
             tool_name = tool_call.function.name
             tool_arguments = tool_call.function.arguments
             model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
