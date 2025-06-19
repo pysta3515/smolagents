@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypedDict, Union
 
 import jinja2
 import yaml
@@ -65,8 +65,10 @@ from .models import (
     CODEAGENT_RESPONSE_FORMAT,
     ChatMessage,
     ChatMessageStreamDelta,
+    ChatMessageToolCall,
     MessageRole,
     Model,
+    agglomerate_stream_deltas,
     parse_json_if_needed,
 )
 from .monitoring import (
@@ -110,7 +112,7 @@ def populate_template(template: str, variables: dict[str, Any]) -> str:
 
 
 @dataclass
-class FinalOutput:
+class ActionOutput:
     output: Any | None
 
 
@@ -203,8 +205,6 @@ class RunResult:
     timing: Timing
 
 
-<<<<<<< HEAD
-=======
 RunItem: TypeAlias = Union[
     ChatMessage,
     ChatMessageToolCall,
@@ -246,7 +246,6 @@ StreamEvent: TypeAlias = Union[
 ]
 
 
->>>>>>> b6a8eeb (Type fixes)
 class MultiStepAgent(ABC):
     """
     Agent class that solves the given task step by step, using the ReAct framework:
@@ -552,9 +551,9 @@ You have been provided with these additional arguments, that you can access usin
         self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
         for el in self._step_stream(memory_step):
             final_answer = el
-            if isinstance(el, ChatMessageStreamDelta):
+            if isinstance(el, ChatMessageStreamEvent):
                 yield el
-            elif isinstance(el, FinalOutput):
+            elif isinstance(el, ActionOutput):
                 final_answer = el.output
                 if self.final_answer_checks:
                     self._validate_final_answer(final_answer)
@@ -1267,34 +1266,15 @@ class ToolCallingAgent(MultiStepAgent):
                     tools_to_call_from=list(self.tools.values()),
                 )
 
-                model_output = ""
-                input_tokens, output_tokens = 0, 0
-                tool_calls = {}
-
+                chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
-                        if event.content is not None:
-                            model_output += event.content
-                            if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
-                                input_tokens = event.token_usage.input_tokens
-                        if event.tool_calls:
-                            tool_calls.update({tool_call.id: tool_call for tool_call in event.tool_calls})
-                        # Propagate the streaming delta
+                        chat_message_stream_deltas.append(event)
                         live.update(
-                            Markdown(model_output + "\n".join([str(tool_call) for tool_call in tool_calls.values()]))
+                            Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
                         )
                         yield event
-
-                chat_message = ChatMessage(
-                    role=MessageRole.ASSISTANT,
-                    content=model_output,
-                    token_usage=TokenUsage(
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                    ),
-                    tool_calls=list(tool_calls.values()),
-                )
+                chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
             else:
                 chat_message: ChatMessage = self.model.generate(
                     input_messages,
@@ -1302,16 +1282,15 @@ class ToolCallingAgent(MultiStepAgent):
                     tools_to_call_from=list(self.tools.values()),
                 )
 
-                model_output = chat_message.content
                 self.logger.log_markdown(
-                    content=model_output if model_output else str(chat_message.raw),
+                    content=chat_message.content if chat_message.content else str(chat_message.raw),
                     title="Output message of the LLM:",
                     level=LogLevel.DEBUG,
                 )
 
             # Record model output
             memory_step.model_output_message = chat_message
-            memory_step.model_output = model_output
+            memory_step.model_output = chat_message.content
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
@@ -1326,7 +1305,7 @@ class ToolCallingAgent(MultiStepAgent):
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
         yield from self.process_tool_calls(chat_message, memory_step)
 
-    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep):
+    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep) -> Generator[StreamEvent]:
         """Process tool calls from the model output and update agent memory.
 
         Args:
@@ -1334,7 +1313,7 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step (`ActionStep)`: Memory ActionStep to update with results.
 
         Yields:
-            `FinalOutput`: The final output of tool execution.
+            `ActionOutput`: The final output of tool execution.
         """
         model_outputs = []
         tool_calls = []
@@ -1342,19 +1321,6 @@ class ToolCallingAgent(MultiStepAgent):
 
         final_answer_call = None
         parallel_calls = []
-<<<<<<< HEAD
-        for tool_call in chat_message.tool_calls:
-            tool_name = tool_call.function.name
-            tool_arguments = tool_call.function.arguments
-            model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
-            tool_calls.append(ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call.id))
-            # Track final_answer separately, add others to parallel processing list
-            if tool_name == "final_answer":
-                final_answer_call = (tool_name, tool_arguments)
-                break  # Stop: final answer reached, no further tool calls
-            else:
-                parallel_calls.append((tool_name, tool_arguments))
-=======
         if chat_message.tool_calls:
             for tool_call in chat_message.tool_calls:
                 yield RunStreamEvent(name="action_call", item=tool_call)
@@ -1368,7 +1334,6 @@ class ToolCallingAgent(MultiStepAgent):
                     break  # Stop: final answer reached, no further tool calls
                 else:
                     parallel_calls.append((tool_name, tool_arguments))
->>>>>>> b6a8eeb (Type fixes)
 
         # Helper function to process a single tool call
         def process_single_tool_call(call_info):
@@ -1654,24 +1619,15 @@ class CodeAgent(MultiStepAgent):
                     stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
                     **additional_args,
                 )
-                output_text = ""
-                input_tokens, output_tokens = 0, 0
+                chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
-                        if event.content is not None:
-                            output_text += event.content
-                            live.update(Markdown(output_text))
-                            if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
-                                input_tokens = event.token_usage.input_tokens
-                        assert isinstance(event, ChatMessageStreamDelta)
+                        chat_message_stream_deltas.append(event)
+                        live.update(
+                            Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
+                        )
                         yield event
-
-                chat_message = ChatMessage(
-                    role="assistant",
-                    content=output_text,
-                    token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
-                )
+                chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
                 memory_step.model_output_message = chat_message
                 output_text = chat_message.content
             else:
