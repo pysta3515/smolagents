@@ -50,7 +50,7 @@ class TestModel:
     def test_agglomerate_stream_deltas(self):
         from smolagents.models import (
             ChatMessageStreamDelta,
-            ChatMessageToolCallDefinition,
+            ChatMessageToolCallFunction,
             TokenUsage,
             ToolCallStreamDelta,
             agglomerate_stream_deltas,
@@ -63,7 +63,7 @@ class TestModel:
                     ToolCallStreamDelta(
                         index=0,
                         type="function",
-                        function=ChatMessageToolCallDefinition(arguments="", name="web_search", description=None),
+                        function=ChatMessageToolCallFunction(arguments="", name="web_search", description=None),
                     )
                 ],
                 token_usage=None,
@@ -74,7 +74,7 @@ class TestModel:
                     ToolCallStreamDelta(
                         index=0,
                         type="function",
-                        function=ChatMessageToolCallDefinition(arguments=' {"', name="web_search", description=None),
+                        function=ChatMessageToolCallFunction(arguments=' {"', name="web_search", description=None),
                     )
                 ],
                 token_usage=None,
@@ -85,7 +85,7 @@ class TestModel:
                     ToolCallStreamDelta(
                         index=0,
                         type="function",
-                        function=ChatMessageToolCallDefinition(
+                        function=ChatMessageToolCallFunction(
                             arguments='query": "current pope name and date of birth"}',
                             name="web_search",
                             description=None,
@@ -283,9 +283,9 @@ class TestInferenceClientModel:
         messages = [{"role": "user", "content": "Test message"}]
         _ = model(messages)
         # Verify that the role conversion was applied
-        assert model.client.chat_completion.call_args.kwargs["messages"][0]["role"] == "system", (
-            "role conversion should be applied"
-        )
+        assert (
+            model.client.chat_completion.call_args.kwargs["messages"][0]["role"] == "system"
+        ), "role conversion should be applied"
 
     def test_init_model_with_tokens(self):
         model = InferenceClientModel(model_id="test-model", token="abc")
