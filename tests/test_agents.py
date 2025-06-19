@@ -42,6 +42,7 @@ from smolagents.agents import (
     MultiStepAgent,
     ToolCall,
     ToolCallingAgent,
+    ToolOutput,
     populate_template,
 )
 from smolagents.default_tools import DuckDuckGoSearchTool, FinalAnswerTool, PythonInterpreterTool, VisitWebpageTool
@@ -665,10 +666,10 @@ nested_answer()
         assert (
             len(update_plan_step.model_input_messages) == 3
         )  # system message + memory messages (1 task message, the latest one is removed) + user message
-        assert update_plan_step.model_input_messages[0]["role"] == "system"
-        assert task in update_plan_step.model_input_messages[0]["content"][0]["text"]
-        assert update_plan_step.model_input_messages[1]["role"] == "user"
-        assert "Previous user request" in update_plan_step.model_input_messages[1]["content"][0]["text"]
+        assert update_plan_step.model_input_messages[0].role == "system"
+        assert task in update_plan_step.model_input_messages[0].content
+        assert update_plan_step.model_input_messages[1].role == "user"
+        assert "Previous user request" in update_plan_step.model_input_messages[1].content[0]["text"]
 
 
 class CustomFinalAnswerTool(FinalAnswerTool):
@@ -820,18 +821,25 @@ class TestMultiStepAgent:
             (
                 1,
                 [
-                    [{"role": MessageRole.USER, "content": [{"type": "text", "text": "INITIAL_PLAN_USER_PROMPT"}]}],
+                    [
+                        ChatMessage(
+                            role=MessageRole.USER, content=[{"type": "text", "text": "INITIAL_PLAN_USER_PROMPT"}]
+                        )
+                    ],
                 ],
             ),
             (
                 2,
                 [
                     [
-                        {
-                            "role": MessageRole.SYSTEM,
-                            "content": [{"type": "text", "text": "UPDATE_PLAN_SYSTEM_PROMPT"}],
-                        },
-                        {"role": MessageRole.USER, "content": [{"type": "text", "text": "UPDATE_PLAN_USER_PROMPT"}]},
+                        ChatMessage(
+                            role=MessageRole.SYSTEM,
+                            content=[{"type": "text", "text": "UPDATE_PLAN_SYSTEM_PROMPT"}],
+                        ),
+                        ChatMessage(
+                            role=MessageRole.USER,
+                            content=[{"type": "text", "text": "UPDATE_PLAN_USER_PROMPT"}],
+                        ),
                     ],
                 ],
             ),
@@ -880,14 +888,12 @@ class TestMultiStepAgent:
         assert isinstance(model_input_messages, list)
         assert len(model_input_messages) == len(expected_model_input_messages)  # 2
         for message, expected_message in zip(model_input_messages, expected_model_input_messages):
-            assert isinstance(message, dict)
-            assert "role" in message
-            assert "content" in message
-            assert message["role"] in MessageRole.__members__.values()
-            assert message["role"] == expected_message["role"]
-            assert isinstance(message["content"], list)
-            assert len(message["content"]) == 1
-            for content, expected_content in zip(message["content"], expected_message["content"]):
+            assert isinstance(message, ChatMessage)
+            assert message.role in MessageRole.__members__.values()
+            assert message.role == expected_message.role
+            assert isinstance(message.content, list)
+            assert len(message.content) == 1
+            for content, expected_content in zip(message.content, expected_message.content):
                 assert content == expected_content
         # Test calls to model
         assert len(fake_model.generate.call_args_list) == 1
@@ -897,14 +903,12 @@ class TestMultiStepAgent:
             assert isinstance(messages, list)
             assert len(messages) == len(expected_messages)
             for message, expected_message in zip(messages, expected_messages):
-                assert isinstance(message, dict)
-                assert "role" in message
-                assert "content" in message
-                assert message["role"] in MessageRole.__members__.values()
-                assert message["role"] == expected_message["role"]
-                assert isinstance(message["content"], list)
-                assert len(message["content"]) == 1
-                for content, expected_content in zip(message["content"], expected_message["content"]):
+                assert isinstance(message, ChatMessage)
+                assert message.role in MessageRole.__members__.values()
+                assert message.role == expected_message.role
+                assert isinstance(message.content, list)
+                assert len(message.content) == 1
+                for content, expected_content in zip(message.content, expected_message.content):
                     assert content == expected_content
 
     @pytest.mark.parametrize(
@@ -914,11 +918,14 @@ class TestMultiStepAgent:
                 None,
                 [
                     [
-                        {
-                            "role": MessageRole.SYSTEM,
-                            "content": [{"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"}],
-                        },
-                        {"role": MessageRole.USER, "content": [{"type": "text", "text": "FINAL_ANSWER_USER_PROMPT"}]},
+                        ChatMessage(
+                            role=MessageRole.SYSTEM,
+                            content=[{"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"}],
+                        ),
+                        ChatMessage(
+                            role=MessageRole.USER,
+                            content=[{"type": "text", "text": "FINAL_ANSWER_USER_PROMPT"}],
+                        ),
                     ]
                 ],
             ),
@@ -926,11 +933,14 @@ class TestMultiStepAgent:
                 ["image1.png"],
                 [
                     [
-                        {
-                            "role": MessageRole.SYSTEM,
-                            "content": [{"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"}, {"type": "image"}],
-                        },
-                        {"role": MessageRole.USER, "content": [{"type": "text", "text": "FINAL_ANSWER_USER_PROMPT"}]},
+                        ChatMessage(
+                            role=MessageRole.SYSTEM,
+                            content=[{"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"}, {"type": "image"}],
+                        ),
+                        ChatMessage(
+                            role=MessageRole.USER,
+                            content=[{"type": "text", "text": "FINAL_ANSWER_USER_PROMPT"}],
+                        ),
                     ]
                 ],
             ),
@@ -959,7 +969,7 @@ class TestMultiStepAgent:
         }
         for expected_messages in expected_messages_list:
             for expected_message in expected_messages:
-                for expected_content in expected_message["content"]:
+                for expected_content in expected_message.content:
                     if "text" in expected_content:
                         expected_content["text"] = expected_message_texts[expected_content["text"]]
         assert final_answer == "Final answer."
@@ -971,14 +981,12 @@ class TestMultiStepAgent:
             assert isinstance(messages, list)
             assert len(messages) == len(expected_messages)
             for message, expected_message in zip(messages, expected_messages):
-                assert isinstance(message, dict)
-                assert "role" in message
-                assert "content" in message
-                assert message["role"] in MessageRole.__members__.values()
-                assert message["role"] == expected_message["role"]
-                assert isinstance(message["content"], list)
-                assert len(message["content"]) == len(expected_message["content"])
-                for content, expected_content in zip(message["content"], expected_message["content"]):
+                assert isinstance(message, ChatMessage)
+                assert message.role in MessageRole.__members__.values()
+                assert message.role == expected_message.role
+                assert isinstance(message.content, list)
+                assert len(message.content) == len(expected_message.content)
+                for content, expected_content in zip(message.content, expected_message.content):
                     assert content == expected_content
 
     def test_interrupt(self):
@@ -1430,7 +1438,9 @@ class TestToolCallingAgent:
             final_outputs = list(agent.process_tool_calls(chat_message, memory_step))
             assert memory_step.model_output == test_case["expected_model_output"]
             assert memory_step.observations == test_case["expected_observations"]
-            assert [final_output.output for final_output in final_outputs] == test_case["expected_final_outputs"]
+            assert [
+                final_output.output for final_output in final_outputs if isinstance(final_output, ToolOutput)
+            ] == test_case["expected_final_outputs"]
             # Verify memory step tool calls were updated correctly
             if test_case["tool_calls"]:
                 assert memory_step.tool_calls == [
