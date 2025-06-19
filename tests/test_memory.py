@@ -1,4 +1,5 @@
 import pytest
+from PIL import Image
 
 from smolagents.agents import ToolCall
 from smolagents.memory import (
@@ -6,7 +7,6 @@ from smolagents.memory import (
     AgentMemory,
     ChatMessage,
     MemoryStep,
-    Message,
     MessageRole,
     PlanningStep,
     SystemPromptStep,
@@ -40,7 +40,7 @@ class TestMemoryStep:
 
 def test_action_step_dict():
     action_step = ActionStep(
-        model_input_messages=[Message(role=MessageRole.USER, content="Hello")],
+        model_input_messages=[ChatMessage(role=MessageRole.USER, content="Hello")],
         tool_calls=[
             ToolCall(id="id", name="get_weather", arguments={"location": "Paris"}),
         ],
@@ -50,14 +50,14 @@ def test_action_step_dict():
         model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Hi"),
         model_output="Hi",
         observations="This is a nice observation",
-        observations_images=["image1.png"],
+        observations_images=[Image.new("RGB", (100, 100))],
         action_output="Output",
         token_usage=TokenUsage(input_tokens=10, output_tokens=20),
     )
     action_step_dict = action_step.dict()
     # Check each key individually for better test failure messages
     assert "model_input_messages" in action_step_dict
-    assert action_step_dict["model_input_messages"] == [Message(role=MessageRole.USER, content="Hello")]
+    assert action_step_dict["model_input_messages"] == [ChatMessage(role=MessageRole.USER, content="Hello")]
 
     assert "tool_calls" in action_step_dict
     assert len(action_step_dict["tool_calls"]) == 1
@@ -76,8 +76,8 @@ def test_action_step_dict():
     assert "token_usage" in action_step_dict
     assert action_step_dict["token_usage"] == {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
 
-    assert "step" in action_step_dict
-    assert action_step_dict["step"] == 1
+    assert "step_number" in action_step_dict
+    assert action_step_dict["step_number"] == 1
 
     assert "error" in action_step_dict
     assert action_step_dict["error"] is None
@@ -97,13 +97,15 @@ def test_action_step_dict():
     assert "observations" in action_step_dict
     assert action_step_dict["observations"] == "This is a nice observation"
 
+    assert "observations_images" in action_step_dict
+
     assert "action_output" in action_step_dict
     assert action_step_dict["action_output"] == "Output"
 
 
 def test_action_step_to_messages():
     action_step = ActionStep(
-        model_input_messages=[Message(role=MessageRole.USER, content="Hello")],
+        model_input_messages=[ChatMessage(role=MessageRole.USER, content="Hello")],
         tool_calls=[
             ToolCall(id="id", name="get_weather", arguments={"location": "Paris"}),
         ],
@@ -113,7 +115,7 @@ def test_action_step_to_messages():
         model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Hi"),
         model_output="Hi",
         observations="This is a nice observation",
-        observations_images=["image1.png"],
+        observations_images=[Image.new("RGB", (100, 100))],
         action_output="Output",
         token_usage=TokenUsage(input_tokens=10, output_tokens=20),
     )
@@ -175,7 +177,7 @@ def test_action_step_to_messages_no_tool_calls_with_observations():
 
 def test_planning_step_to_messages():
     planning_step = PlanningStep(
-        model_input_messages=[Message(role=MessageRole.USER, content="Hello")],
+        model_input_messages=[ChatMessage(role=MessageRole.USER, content="Hello")],
         model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Plan"),
         plan="This is a plan.",
         timing=Timing(start_time=0.0, end_time=1.0),
@@ -197,7 +199,7 @@ def test_planning_step_to_messages():
 
 
 def test_task_step_to_messages():
-    task_step = TaskStep(task="This is a task.", task_images=["task_image1.png"])
+    task_step = TaskStep(task="This is a task.", task_images=[Image.new("RGB", (100, 100))])
     messages = task_step.to_messages(summary_mode=False)
     assert len(messages) == 1
     for message in messages:

@@ -53,7 +53,6 @@ from .memory import (
     ActionStep,
     AgentMemory,
     FinalAnswerStep,
-    Message,
     PlanningStep,
     SystemPromptStep,
     TaskStep,
@@ -113,7 +112,14 @@ def populate_template(template: str, variables: dict[str, Any]) -> str:
 
 @dataclass
 class ActionOutput:
-    output: Any | None
+    output: Any
+    is_final_answer: bool
+
+
+@dataclass
+class ToolOutput:
+    output: Any
+    is_final_answer: bool
 
 
 class PlanningPromptTemplate(TypedDict):
@@ -208,7 +214,8 @@ class RunResult:
 RunItem: TypeAlias = Union[
     ChatMessage,
     ChatMessageToolCall,
-    FinalOutput,
+    ActionOutput,
+    ToolOutput,
     PlanningStep,
     ActionStep,
     FinalAnswerStep,
@@ -323,7 +330,7 @@ class MultiStepAgent(ABC):
         self.name = self._validate_name(name)
         self.description = description
         self.provide_run_summary = provide_run_summary
-        self.final_answer_checks = final_answer_checks
+        self.final_answer_checks = final_answer_checks if final_answer_checks is not None else []
         self.return_full_result = return_full_result
         self.instructions = instructions
         self._setup_managed_agents(managed_agents)
@@ -496,7 +503,8 @@ You have been provided with these additional arguments, that you can access usin
     ) -> Generator[StreamEvent]:
         final_answer = None
         self.step_number = 1
-        while final_answer is None and self.step_number <= max_steps:
+        returned_final_answer = False
+        while not returned_final_answer and self.step_number <= max_steps:
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
 
@@ -526,10 +534,19 @@ You have been provided with these additional arguments, that you can access usin
                 timing=Timing(start_time=action_step_start_time),
                 observations_images=images,
             )
+            self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
-                for el in self._execute_step(action_step):
-                    yield el
-                final_answer = el
+                for output in self._step_stream(action_step):
+                    # Yield streaming deltas
+                    if not isinstance(output, (ActionOutput, ToolOutput)):
+                        yield output
+
+                    if isinstance(output, (ActionOutput, ToolOutput)) and output.is_final_answer:
+                        if self.final_answer_checks:
+                            self._validate_final_answer(output.output)
+                        returned_final_answer = True
+                        action_step.is_final_answer = True
+                        final_answer = output.output
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
@@ -542,22 +559,10 @@ You have been provided with these additional arguments, that you can access usin
                 yield RunStreamEvent(name="action_step", item=action_step)
                 self.step_number += 1
 
-        if final_answer is None and self.step_number == max_steps + 1:
+        if not returned_final_answer and self.step_number == max_steps + 1:
             final_answer = self._handle_max_steps_reached(task, images)
             yield RunStreamEvent(name="action_step", item=action_step)
         yield RunStreamEvent(name="final_answer_step", item=FinalAnswerStep(handle_agent_output_types(final_answer)))
-
-    def _execute_step(self, memory_step: ActionStep) -> Generator[StreamEvent]:
-        self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
-        for el in self._step_stream(memory_step):
-            final_answer = el
-            if isinstance(el, ChatMessageStreamEvent):
-                yield el
-            elif isinstance(el, ActionOutput):
-                final_answer = el.output
-                if self.final_answer_checks:
-                    self._validate_final_answer(final_answer)
-                yield el
 
     def _validate_final_answer(self, final_answer: Any):
         for check_function in self.final_answer_checks:
@@ -592,18 +597,13 @@ You have been provided with these additional arguments, that you can access usin
         start_time = time.time()
         if is_first_step:
             input_messages = [
-                {
-                    "role": MessageRole.USER,
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": populate_template(
-                                self.prompt_templates["planning"]["initial_plan"],
-                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
-                            ),
-                        }
-                    ],
-                }
+                ChatMessage(
+                    role=MessageRole.USER,
+                    content=populate_template(
+                        self.prompt_templates["planning"]["initial_plan"],
+                        variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
+                    ),
+                )
             ]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 plan_message_content = ""
@@ -622,8 +622,12 @@ You have been provided with these additional arguments, that you can access usin
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
                 plan_message_content = plan_message.content
                 input_tokens, output_tokens = (
-                    plan_message.token_usage.input_tokens,
-                    plan_message.token_usage.output_tokens,
+                    (
+                        plan_message.token_usage.input_tokens,
+                        plan_message.token_usage.output_tokens,
+                    )
+                    if plan_message.token_usage
+                    else (None, None)
                 )
             plan = textwrap.dedent(
                 f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
@@ -632,33 +636,23 @@ You have been provided with these additional arguments, that you can access usin
             # Summary mode removes the system prompt and previous planning messages output by the model.
             # Removing previous planning messages avoids influencing too much the new plan.
             memory_messages = self.write_memory_to_messages(summary_mode=True)
-            plan_update_pre = Message(
+            plan_update_pre = ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=[
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
-                        ),
-                    }
-                ],
+                content=populate_template(
+                    self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
+                ),
             )
-            plan_update_post = Message(
+            plan_update_post = ChatMessage(
                 role=MessageRole.USER,
-                content=[
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["planning"]["update_plan_post_messages"],
-                            variables={
-                                "task": task,
-                                "tools": self.tools,
-                                "managed_agents": self.managed_agents,
-                                "remaining_steps": (self.max_steps - step),
-                            },
-                        ),
-                    }
-                ],
+                content=populate_template(
+                    self.prompt_templates["planning"]["update_plan_post_messages"],
+                    variables={
+                        "task": task,
+                        "tools": self.tools,
+                        "managed_agents": self.managed_agents,
+                        "remaining_steps": (self.max_steps - step),
+                    },
+                ),
             )
             # remove last message from memory_messages because it is the current task
             input_messages = [plan_update_pre] + memory_messages[:-1] + [plan_update_post]
@@ -680,10 +674,11 @@ You have been provided with these additional arguments, that you can access usin
             else:
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
                 plan_message_content = plan_message.content
-                input_tokens, output_tokens = (
-                    plan_message.token_usage.input_tokens,
-                    plan_message.token_usage.output_tokens,
-                )
+                if plan_message.token_usage is not None:
+                    input_tokens, output_tokens = (
+                        plan_message.token_usage.input_tokens,
+                        plan_message.token_usage.output_tokens,
+                    )
             plan = textwrap.dedent(
                 f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message_content}\n```"""
             )
@@ -716,8 +711,8 @@ You have been provided with these additional arguments, that you can access usin
 
     def write_memory_to_messages(
         self,
-        summary_mode: bool | None = False,
-    ) -> list[Message]:
+        summary_mode: bool = False,
+    ) -> list[ChatMessage]:
         """
         Reads past llm_outputs, actions, and observations or errors from the memory into a series of messages
         that can be used as input to the LLM. Adds a number of keywords (such as PLAN, error, etc) to help
@@ -776,7 +771,7 @@ You have been provided with these additional arguments, that you can access usin
             `str`: Final answer to the task.
         """
         messages = [
-            Message(
+            ChatMessage(
                 role=MessageRole.SYSTEM,
                 content=[
                     {
@@ -787,21 +782,16 @@ You have been provided with these additional arguments, that you can access usin
             )
         ]
         if images:
-            messages[0]["content"].append({"type": "image"})
+            messages[0].content += [{"type": "image", "image": image} for image in images]
         messages += self.write_memory_to_messages()[1:]
-        messages += [
-            Message(
+        messages.append(
+            ChatMessage(
                 role=MessageRole.USER,
-                content=[
-                    {
-                        "type": "text",
-                        "text": populate_template(
-                            self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
-                        ),
-                    }
-                ],
+                content=populate_template(
+                    self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
+                ),
             )
-        ]
+        )
         try:
             chat_message: ChatMessage = self.model.generate(messages)
             return chat_message
@@ -1321,19 +1311,19 @@ class ToolCallingAgent(MultiStepAgent):
 
         final_answer_call = None
         parallel_calls = []
-        if chat_message.tool_calls:
-            for tool_call in chat_message.tool_calls:
-                yield RunStreamEvent(name="action_call", item=tool_call)
-                tool_name = tool_call.function.name
-                tool_arguments = tool_call.function.arguments
-                model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
-                tool_calls.append(ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call.id))
-                # Track final_answer separately, add others to parallel processing list
-                if tool_name == "final_answer":
-                    final_answer_call = (tool_name, tool_arguments)
-                    break  # Stop: final answer reached, no further tool calls
-                else:
-                    parallel_calls.append((tool_name, tool_arguments))
+        assert chat_message.tool_calls is not None
+        for tool_call in chat_message.tool_calls:
+            yield RunStreamEvent(name="action_call", item=tool_call)
+            tool_name = tool_call.function.name
+            tool_arguments = tool_call.function.arguments
+            model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
+            tool_calls.append(ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call.id))
+            # Track final_answer separately, add others to parallel processing list
+            if tool_name == "final_answer":
+                final_answer_call = (tool_name, tool_arguments)
+                break  # Stop: final answer reached, no further tool calls
+            else:
+                parallel_calls.append((tool_name, tool_arguments))
 
         # Helper function to process a single tool call
         def process_single_tool_call(call_info):
@@ -1362,7 +1352,7 @@ class ToolCallingAgent(MultiStepAgent):
             )
             return observation
 
-        # Process non-final-answer tool calls in parallel
+        # Process tool calls in parallel
         if parallel_calls:
             if len(parallel_calls) == 1:
                 # If there's only one call, process it directly
@@ -1404,7 +1394,7 @@ class ToolCallingAgent(MultiStepAgent):
                     level=LogLevel.INFO,
                 )
             memory_step.action_output = final_answer
-            yield RunStreamEvent(name="action_call", item=FinalOutput(output=final_answer))
+            yield RunStreamEvent(name="action_call", item=ToolOutput(output=final_answer, is_final_answer=True))
 
         # Update memory step with all results
         if model_outputs:
@@ -1717,7 +1707,7 @@ class CodeAgent(MultiStepAgent):
         ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
-        yield RunStreamEvent(name="action_output", item=FinalOutput(output=output if is_final_answer else None))
+        yield RunStreamEvent(name="action_output", item=ActionOutput(output=output, is_final_answer=is_final_answer))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.

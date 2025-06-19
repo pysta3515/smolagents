@@ -27,7 +27,6 @@ from smolagents.models import (
     AzureOpenAIServerModel,
     ChatMessage,
     ChatMessageToolCall,
-    HfApiModel,
     InferenceClientModel,
     LiteLLMModel,
     LiteLLMRouterModel,
@@ -48,6 +47,67 @@ from .utils.markers import require_run_all
 
 
 class TestModel:
+    def test_agglomerate_stream_deltas(self):
+        from smolagents.models import (
+            ChatMessageStreamDelta,
+            ChatMessageToolCallFunction,
+            TokenUsage,
+            ToolCallStreamDelta,
+            agglomerate_stream_deltas,
+        )
+
+        stream_deltas = [
+            ChatMessageStreamDelta(
+                content="Hi",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallFunction(arguments="", name="web_search", description=None),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content=" everyone",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallFunction(arguments=' {"', name="web_search", description=None),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content=", it's",
+                tool_calls=[
+                    ToolCallStreamDelta(
+                        index=0,
+                        type="function",
+                        function=ChatMessageToolCallFunction(
+                            arguments='query": "current pope name and date of birth"}',
+                            name="web_search",
+                            description=None,
+                        ),
+                    )
+                ],
+                token_usage=None,
+            ),
+            ChatMessageStreamDelta(
+                content="",
+                tool_calls=None,
+                token_usage=TokenUsage(input_tokens=1348, output_tokens=24),
+            ),
+        ]
+        agglomerated_stream_delta = agglomerate_stream_deltas(stream_deltas)
+        assert agglomerated_stream_delta.content == "Hi everyone, it's"
+        assert (
+            agglomerated_stream_delta.tool_calls[0].function.arguments
+            == ' {"query": "current pope name and date of birth"}'
+        )
+        assert agglomerated_stream_delta.token_usage.total_tokens == 1372
+
     @pytest.mark.parametrize(
         "model_id, stop_sequences, should_contain_stop",
         [
@@ -269,21 +329,6 @@ class TestInferenceClientModel:
         messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}]}]
         for el in model.generate_stream(messages, stop_sequences=["great"]):
             assert el.content is not None
-
-
-class TestHfApiModel:
-    def test_deprecation_warning(self):
-        """Test that HfApiModel raises a deprecation warning when instantiated."""
-        # Should raise FutureWarning with specific message
-        with pytest.warns(
-            FutureWarning,
-            match="HfApiModel was renamed to InferenceClientModel in version 1.14.0 and will be removed in 1.17.0.",
-        ):
-            model = HfApiModel(model_id="test-model")
-        # Verify it returns an instance of InferenceClientModel
-        assert isinstance(model, InferenceClientModel)
-        # Verify the model_id was properly passed through
-        assert model.model_id == "test-model"
 
 
 class TestLiteLLMModel:

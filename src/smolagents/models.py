@@ -22,7 +22,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
 from threading import Thread
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
 from .monitoring import TokenUsage
 from .tools import Tool
@@ -73,7 +73,7 @@ def get_dict_from_nested_dataclasses(obj, ignore_key=None):
 
 
 @dataclass
-class ChatMessageToolCallDefinition:
+class ChatMessageToolCallFunction:
     arguments: Any
     name: str
     description: str | None = None
@@ -81,7 +81,7 @@ class ChatMessageToolCallDefinition:
 
 @dataclass
 class ChatMessageToolCall:
-    function: ChatMessageToolCallDefinition
+    function: ChatMessageToolCallFunction
     id: str
     type: str
 
@@ -92,7 +92,7 @@ class ChatMessageToolCall:
 @dataclass
 class ChatMessage:
     role: str
-    content: str | None = None
+    content: str | list[dict[str, Any]] | None = None
     tool_calls: list[ChatMessageToolCall] | None = None
     raw: Any | None = None  # Stores the raw output from the API
     token_usage: TokenUsage | None = None
@@ -105,7 +105,7 @@ class ChatMessage:
         if data.get("tool_calls"):
             tool_calls = [
                 ChatMessageToolCall(
-                    function=ChatMessageToolCallDefinition(**tc["function"]), id=tc["id"], type=tc["type"]
+                    function=ChatMessageToolCallFunction(**tc["function"]), id=tc["id"], type=tc["type"]
                 )
                 for tc in data["tool_calls"]
             ]
@@ -122,7 +122,7 @@ class ChatMessage:
         return get_dict_from_nested_dataclasses(self)
 
     def render_as_markdown(self) -> str:
-        rendered = self.content or ""
+        rendered = str(self.content) or ""
         if self.tool_calls:
             rendered += "\n".join(
                 [
@@ -144,20 +144,20 @@ def parse_json_if_needed(arguments: str | dict) -> str | dict:
 
 
 @dataclass
-class ChatMessageStreamDelta:
-    content: str | None = None
-    tool_calls: list[ChatMessageToolCall] | None = None
-    token_usage: TokenUsage | None = None
-
-
-@dataclass
-class ToolCallStreamDelta:
+class ChatMessageToolCallStreamDelta:
     """Represents a streaming delta for tool calls during generation."""
 
     index: int | None = None
     id: str | None = None
     type: str | None = None
-    function: dict[str, Any] | None = None
+    function: ChatMessageToolCallFunction | None = None
+
+
+@dataclass
+class ChatMessageStreamDelta:
+    content: str | None = None
+    tool_calls: list[ChatMessageToolCallStreamDelta] | None = None
+    token_usage: TokenUsage | None = None
 
 
 class MessageRole(str, Enum):
@@ -172,18 +172,13 @@ class MessageRole(str, Enum):
         return [r.value for r in cls]
 
 
-class Message(TypedDict):
-    role: MessageRole
-    content: str | list[dict[str, Any]]
-
-
 def agglomerate_stream_deltas(
     stream_deltas: list[ChatMessageStreamDelta], role: MessageRole = MessageRole.ASSISTANT
 ) -> ChatMessage:
     """
     Agglomerate a list of stream deltas into a single stream delta.
     """
-    accumulated_tool_calls: dict[int, ToolCallStreamDelta] = {}
+    accumulated_tool_calls: dict[int, ChatMessageToolCallStreamDelta] = {}
     accumulated_content = ""
     total_input_tokens = 0
     total_output_tokens = 0
@@ -198,10 +193,10 @@ def agglomerate_stream_deltas(
                 # Extend accumulated_tool_calls list to accommodate the new tool call if needed
                 if tool_call_delta.index is not None:
                     if tool_call_delta.index not in accumulated_tool_calls:
-                        accumulated_tool_calls[tool_call_delta.index] = ToolCallStreamDelta(
+                        accumulated_tool_calls[tool_call_delta.index] = ChatMessageToolCallStreamDelta(
                             id=tool_call_delta.id,
                             type=tool_call_delta.type,
-                            function=ChatMessageToolCallDefinition(name="", arguments=""),
+                            function=ChatMessageToolCallFunction(name="", arguments=""),
                         )
                     # Update the tool call at the specific index
                     tool_call = accumulated_tool_calls[tool_call_delta.index]
@@ -210,6 +205,7 @@ def agglomerate_stream_deltas(
                     if tool_call_delta.type:
                         tool_call.type = tool_call_delta.type
                     if tool_call_delta.function:
+                        tool_call.function = ChatMessageToolCallFunction(name="", arguments=None)
                         if tool_call_delta.function.name:
                             tool_call.function.name = tool_call_delta.function.name
                         if tool_call_delta.function.arguments:
@@ -266,11 +262,11 @@ def remove_stop_sequences(content: str, stop_sequences: list[str]) -> str:
 
 
 def get_clean_message_list(
-    message_list: list[dict[str, str | list[dict]]],
+    message_list: list[ChatMessage],
     role_conversions: dict[MessageRole, MessageRole] | dict[str, str] = {},
     convert_images_to_image_urls: bool = False,
     flatten_messages_as_text: bool = False,
-) -> list[dict[str, str | list[dict]]]:
+) -> list[ChatMessage]:
     """
     Subsequent messages with the same role will be concatenated to a single message.
     output_message_list is a list of messages that will be used to generate the final message that is chat template compatible with transformers LLM chat template.
@@ -281,18 +277,18 @@ def get_clean_message_list(
         convert_images_to_image_urls (`bool`, default `False`): Whether to convert images to image URLs.
         flatten_messages_as_text (`bool`, default `False`): Whether to flatten messages as text.
     """
-    output_message_list: list[dict[str, str | list[dict]]] = []
+    output_message_list: list[ChatMessage] = []
     message_list = deepcopy(message_list)  # Avoid modifying the original list
     for message in message_list:
-        role = message["role"]
+        role = message.role
         if role not in MessageRole.roles():
             raise ValueError(f"Incorrect role {role}, only {MessageRole.roles()} are supported for now.")
 
         if role in role_conversions:
-            message["role"] = role_conversions[role]  # type: ignore
+            message.role = role_conversions[role]  # type: ignore
         # encode images if needed
-        if isinstance(message["content"], list):
-            for element in message["content"]:
+        if isinstance(message.content, list):
+            for element in message.content:
                 assert isinstance(element, dict), "Error: this element should be a dict:" + str(element)
                 if element["type"] == "image":
                     assert not flatten_messages_as_text, f"Cannot use images with {flatten_messages_as_text=}"
@@ -306,23 +302,23 @@ def get_clean_message_list(
                     else:
                         element["image"] = encode_image_base64(element["image"])
 
-        if len(output_message_list) > 0 and message["role"] == output_message_list[-1]["role"]:
-            assert isinstance(message["content"], list), "Error: wrong content:" + str(message["content"])
+        if len(output_message_list) > 0 and message.role == output_message_list[-1].role:
+            assert isinstance(message.content, list), "Error: wrong content:" + str(message.content)
             if flatten_messages_as_text:
-                output_message_list[-1]["content"] += "\n" + message["content"][0]["text"]
+                output_message_list[-1].content += "\n" + message.content[0]["text"]
             else:
-                for el in message["content"]:
-                    if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
+                for el in message.content:
+                    if el["type"] == "text" and output_message_list[-1].content[-1]["type"] == "text":
                         # Merge consecutive text messages rather than creating new ones
-                        output_message_list[-1]["content"][-1]["text"] += "\n" + el["text"]
+                        output_message_list[-1].content[-1]["text"] += "\n" + el["text"]
                     else:
-                        output_message_list[-1]["content"].append(el)
+                        output_message_list[-1].content.append(el)
         else:
             if flatten_messages_as_text:
-                content = message["content"][0]["text"]
+                content = message.content[0]["text"]
             else:
-                content = message["content"]
-            output_message_list.append({"role": message["role"], "content": content})
+                content = message.content
+            output_message_list.append(ChatMessage(role=message.role, content=content))
     return output_message_list
 
 
@@ -340,7 +336,7 @@ def get_tool_call_from_text(text: str, tool_name_key: str, tool_arguments_key: s
     return ChatMessageToolCall(
         id=str(uuid.uuid4()),
         type="function",
-        function=ChatMessageToolCallDefinition(name=tool_name, arguments=tool_arguments),
+        function=ChatMessageToolCallFunction(name=tool_name, arguments=tool_arguments),
     )
 
 
@@ -399,7 +395,7 @@ class Model:
 
     def _prepare_completion_kwargs(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -454,7 +450,7 @@ class Model:
 
     def generate(
         self,
-        messages: list[Message],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -609,7 +605,7 @@ class VLLMModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -697,9 +693,7 @@ class MLXModel(Model):
     >>> messages = [
     ...     {
     ...         "role": "user",
-    ...         "content": [
-    ...             {"type": "text", "text": "Explain quantum mechanics in simple terms."}
-    ...         ]
+    ...         "content": "Explain quantum mechanics in simple terms."
     ...     }
     ... ]
     >>> response = engine(messages, stop_sequences=["END"])
@@ -735,7 +729,7 @@ class MLXModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -911,7 +905,7 @@ class TransformersModel(Model):
 
     def _prepare_completion_args(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
@@ -934,7 +928,7 @@ class TransformersModel(Model):
             or 1024
         )
         prompt_tensor = (self.processor if hasattr(self, "processor") else self.tokenizer).apply_chat_template(
-            messages,
+            [message.dict() for message in messages],
             tools=tools,
             return_tensors="pt",
             add_generation_prompt=True,
@@ -959,7 +953,7 @@ class TransformersModel(Model):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1003,7 +997,7 @@ class TransformersModel(Model):
 
     def generate_stream(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1128,7 +1122,7 @@ class LiteLLMModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1162,14 +1156,12 @@ class LiteLLMModel(ApiModel):
 
     def generate_stream(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
-        if tools_to_call_from:
-            raise NotImplementedError("Streaming is not yet supported for tool calling")
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -1183,11 +1175,6 @@ class LiteLLMModel(ApiModel):
             **kwargs,
         )
         for event in self.client.completion(**completion_kwargs, stream=True, stream_options={"include_usage": True}):
-            if event.choices:
-                if event.choices[0].delta.content:
-                    yield ChatMessageStreamDelta(
-                        content=event.choices[0].delta.content,
-                    )
             if getattr(event, "usage", None):
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens
@@ -1198,6 +1185,26 @@ class LiteLLMModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                     ),
                 )
+            if event.choices:
+                choice = event.choices[0]
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ChatMessageToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
+                    if not getattr(choice, "finish_reason", None):
+                        raise ValueError(f"No content or tool calls in event: {event}")
 
 
 class LiteLLMRouterModel(LiteLLMModel):
@@ -1285,7 +1292,7 @@ class LiteLLMRouterModel(LiteLLMModel):
 
     def create_client(self):
         try:
-            from litellm import Router
+            from litellm.router import Router
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
                 "Please install 'litellm' extra to use LiteLLMRouterModel: `pip install 'smolagents[litellm]'`"
@@ -1392,7 +1399,7 @@ class InferenceClientModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1427,7 +1434,7 @@ class InferenceClientModel(ApiModel):
 
     def generate_stream(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1443,67 +1450,10 @@ class InferenceClientModel(ApiModel):
             convert_images_to_image_urls=True,
             **kwargs,
         )
-
-        # Track accumulated tool calls and content
-        accumulated_tool_calls = {}
-        current_content = ""
-
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
-            if event.choices:
-                choice = event.choices[0]
-                if choice.delta is None:
-                    if not getattr(choice, "finish_reason", None):
-                        raise ValueError(f"No content or tool calls in event: {event}")
-                else:
-                    delta = choice.delta
-
-                    # Handle content streaming
-                    if delta.content:
-                        current_content += delta.content
-                        yield ChatMessageStreamDelta(content=delta.content)
-
-                    # Handle tool call streaming
-                    if delta.tool_calls:
-                        for tool_call_delta in delta.tool_calls:  # ?ormally there should be only one call at a time
-                            # Extend accumulated_tool_calls list to accommodate the new tool call if needed
-                            while len(accumulated_tool_calls) <= tool_call_delta.index:
-                                accumulated_tool_calls[tool_call_delta.index] = {
-                                    "id": None,
-                                    "type": None,
-                                    "function": {"name": None, "arguments": ""},
-                                }
-
-                            # Update the tool call at the specific index
-                            tool_call = accumulated_tool_calls[tool_call_delta.index]
-
-                            if tool_call_delta.id:
-                                tool_call["id"] = tool_call_delta.index
-                            if tool_call_delta.type:
-                                tool_call["type"] = tool_call_delta.type
-                            if tool_call_delta.function:
-                                if tool_call_delta.function.name:
-                                    tool_call["function"]["name"] = tool_call_delta.function.name
-                                if tool_call_delta.function.arguments:
-                                    tool_call["function"]["arguments"] += tool_call_delta.function.arguments
-
-                        yield ChatMessageStreamDelta(
-                            content=current_content,
-                            tool_calls=[
-                                ToolCallStreamDelta(
-                                    id=tool_call["id"],
-                                    type=tool_call["type"],
-                                    function=ChatMessageToolCallDefinition(
-                                        name=tool_call["function"]["name"],
-                                        arguments=tool_call["function"]["arguments"],
-                                    ),
-                                )
-                                for tool_call in accumulated_tool_calls.values()
-                            ],
-                        )
-
-            if event.usage:
+            if getattr(event, "usage", None):
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens
                 yield ChatMessageStreamDelta(
@@ -1513,15 +1463,26 @@ class InferenceClientModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                     ),
                 )
-
-
-class HfApiModel(InferenceClientModel):
-    def __new__(cls, *args, **kwargs):
-        warnings.warn(
-            "HfApiModel was renamed to InferenceClientModel in version 1.14.0 and will be removed in 1.17.0.",
-            FutureWarning,
-        )
-        return super().__new__(cls)
+            if event.choices:
+                choice = event.choices[0]
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ChatMessageToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
+                    if not getattr(choice, "finish_reason", None):
+                        raise ValueError(f"No content or tool calls in event: {event}")
 
 
 class OpenAIServerModel(ApiModel):
@@ -1587,7 +1548,7 @@ class OpenAIServerModel(ApiModel):
 
     def generate_stream(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1603,65 +1564,39 @@ class OpenAIServerModel(ApiModel):
             convert_images_to_image_urls=True,
             **kwargs,
         )
-
-        # Track accumulated tool calls and content
-        accumulated_tool_calls = {}
-        current_content = ""
-
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
+            if getattr(event, "usage", None):
+                self._last_input_token_count = event.usage.prompt_tokens
+                self._last_output_token_count = event.usage.completion_tokens
+                yield ChatMessageStreamDelta(
+                    content="",
+                    token_usage=TokenUsage(
+                        input_tokens=event.usage.prompt_tokens,
+                        output_tokens=event.usage.completion_tokens,
+                    ),
+                )
             if event.choices:
                 choice = event.choices[0]
-                if choice.delta is None:
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ChatMessageToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
                     if not getattr(choice, "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
-                else:
-                    delta = choice.delta
-
-                    # Handle content streaming
-                    if delta.content:
-                        current_content += delta.content
-                        yield ChatMessageStreamDelta(content=delta.content)
-
-                    # Handle tool call streaming
-                    if delta.tool_calls:
-                        for tool_call_delta in delta.tool_calls:  # ?ormally there should be only one call at a time
-                            # Extend accumulated_tool_calls list to accommodate the new tool call if needed
-                            while len(accumulated_tool_calls) <= tool_call_delta.index:
-                                accumulated_tool_calls[tool_call_delta.index] = {
-                                    "id": None,
-                                    "type": None,
-                                    "function": {"name": None, "arguments": ""},
-                                }
-
-                            # Update the tool call at the specific index
-                            tool_call = accumulated_tool_calls[tool_call_delta.index]
-
-                            if tool_call_delta.id:
-                                tool_call["id"] = tool_call_delta.index
-                            if tool_call_delta.type:
-                                tool_call["type"] = tool_call_delta.type
-                            if tool_call_delta.function:
-                                if tool_call_delta.function.name:
-                                    tool_call["function"]["name"] = tool_call_delta.function.name
-                                if tool_call_delta.function.arguments:
-                                    tool_call["function"]["arguments"] += tool_call_delta.function.arguments
-
-                        yield ChatMessageStreamDelta(
-                            content=current_content,
-                            tool_calls=[
-                                ToolCallStreamDelta(
-                                    id=tool_call["id"],
-                                    type=tool_call["type"],
-                                    function=ChatMessageToolCallDefinition(
-                                        name=tool_call["function"]["name"],
-                                        arguments=tool_call["function"]["arguments"],
-                                    ),
-                                )
-                                for tool_call in accumulated_tool_calls.values()
-                            ],
-                        )
 
             if event.usage:
                 self._last_input_token_count = event.usage.prompt_tokens
@@ -1673,10 +1608,30 @@ class OpenAIServerModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                     ),
                 )
+            if event.choices:
+                choice = event.choices[0]
+                if choice.delta:
+                    yield ChatMessageStreamDelta(
+                        content=choice.delta.content,
+                        tool_calls=[
+                            ChatMessageToolCallStreamDelta(
+                                index=delta.index,
+                                id=delta.id,
+                                type=delta.type,
+                                function=delta.function,
+                            )
+                            for delta in choice.delta.tool_calls
+                        ]
+                        if choice.delta.tool_calls
+                        else None,
+                    )
+                else:
+                    if not getattr(choice, "finish_reason", None):
+                        raise ValueError(f"No content or tool calls in event: {event}")
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1704,6 +1659,11 @@ class OpenAIServerModel(ApiModel):
                 output_tokens=response.usage.completion_tokens,
             ),
         )
+
+
+class OpenAIModel(OpenAIServerModel):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
 
 
 class AzureOpenAIServerModel(OpenAIServerModel):
@@ -1761,6 +1721,11 @@ class AzureOpenAIServerModel(OpenAIServerModel):
             ) from e
 
         return openai.AzureOpenAI(**self.client_kwargs)
+
+
+class AzureOpenAIModel(AzureOpenAIServerModel):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
 
 
 class AmazonBedrockServerModel(ApiModel):
@@ -1854,11 +1819,13 @@ class AmazonBedrockServerModel(ApiModel):
 
     def _prepare_completion_kwargs(
         self,
-        messages: list[dict[str, str | list[dict]]],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         convert_images_to_image_urls: bool = False,
+        tool_choice: str | dict[Any, Any] | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -1905,7 +1872,7 @@ class AmazonBedrockServerModel(ApiModel):
 
     def generate(
         self,
-        messages: list[dict[str, str | list[dict]] | ChatMessage],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
@@ -1939,6 +1906,11 @@ class AmazonBedrockServerModel(ApiModel):
         )
 
 
+class AmazonBedrockModel(AmazonBedrockServerModel):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+
 __all__ = [
     "MessageRole",
     "tool_role_conversions",
@@ -1948,12 +1920,14 @@ __all__ = [
     "TransformersModel",
     "ApiModel",
     "InferenceClientModel",
-    "HfApiModel",
     "LiteLLMModel",
     "LiteLLMRouterModel",
     "OpenAIServerModel",
+    "OpenAIModel",
     "VLLMModel",
     "AzureOpenAIServerModel",
+    "AzureOpenAIModel",
     "AmazonBedrockServerModel",
+    "AmazonBedrockModel",
     "ChatMessage",
 ]

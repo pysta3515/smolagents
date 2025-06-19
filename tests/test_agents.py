@@ -53,7 +53,7 @@ from smolagents.memory import (
 from smolagents.models import (
     ChatMessage,
     ChatMessageToolCall,
-    ChatMessageToolCallDefinition,
+    ChatMessageToolCallFunction,
     InferenceClientModel,
     MessageRole,
     Model,
@@ -115,7 +115,7 @@ class FakeToolCallModel(Model):
                     ChatMessageToolCall(
                         id="call_0",
                         type="function",
-                        function=ChatMessageToolCallDefinition(
+                        function=ChatMessageToolCallFunction(
                             name="python_interpreter", arguments={"code": "2*3.6452"}
                         ),
                     )
@@ -129,7 +129,7 @@ class FakeToolCallModel(Model):
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="final_answer", arguments={"answer": "7.2904"}),
+                        function=ChatMessageToolCallFunction(name="final_answer", arguments={"answer": "7.2904"}),
                     )
                 ],
             )
@@ -145,7 +145,7 @@ class FakeToolCallModelImage(Model):
                     ChatMessageToolCall(
                         id="call_0",
                         type="function",
-                        function=ChatMessageToolCallDefinition(
+                        function=ChatMessageToolCallFunction(
                             name="fake_image_generation_tool",
                             arguments={"prompt": "An image of a cat"},
                         ),
@@ -160,7 +160,7 @@ class FakeToolCallModelImage(Model):
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="final_answer", arguments="image.png"),
+                        function=ChatMessageToolCallFunction(name="final_answer", arguments="image.png"),
                     )
                 ],
             )
@@ -176,7 +176,7 @@ class FakeToolCallModelVL(Model):
                     ChatMessageToolCall(
                         id="call_0",
                         type="function",
-                        function=ChatMessageToolCallDefinition(
+                        function=ChatMessageToolCallFunction(
                             name="fake_image_understanding_tool",
                             arguments={
                                 "prompt": "What is in this image?",
@@ -194,7 +194,7 @@ class FakeToolCallModelVL(Model):
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="final_answer", arguments="The image is a cat."),
+                        function=ChatMessageToolCallFunction(name="final_answer", arguments="The image is a cat."),
                     )
                 ],
             )
@@ -612,12 +612,26 @@ nested_answer()
         assert step_memory_dict["timing"]["duration"] > 0.1
 
     def test_final_answer_checks(self):
+        error_string = "failed with error"
+
         def check_always_fails(final_answer, agent_memory):
             assert False, "Error raised in check"
 
         agent = CodeAgent(model=FakeCodeModel(), tools=[], final_answer_checks=[check_always_fails])
         agent.run("Dummy task.")
+        assert error_string in str(agent.write_memory_to_messages())
         assert "Error raised in check" in str(agent.write_memory_to_messages())
+
+        agent = CodeAgent(
+            model=FakeCodeModel(),
+            tools=[],
+            final_answer_checks=[lambda x, y: x == 7.2904],
+            verbosity_level=1000,
+        )
+        output = agent.run("Dummy task.")
+        assert output == 7.2904  # Check that output is correct
+        assert len([step for step in agent.memory.steps if isinstance(step, ActionStep)]) == 2
+        assert error_string not in str(agent.write_memory_to_messages())
 
     def test_generation_errors_are_raised(self):
         class FakeCodeModel(Model):
@@ -640,19 +654,21 @@ nested_answer()
         agent.memory.steps.append(previous_step)
 
         # Run the agent
-        agent.run(task, reset=False)
+        agent.run(task, reset=False, max_steps=2)
 
         # Verify that the planning step used update plan prompts
         planning_steps = [step for step in agent.memory.steps if isinstance(step, PlanningStep)]
         assert len(planning_steps) > 0
 
         # Check that the planning step's model input messages contain the injected memory
-        planning_step = planning_steps[0]
-        assert len(planning_step.model_input_messages) == 3  # system message + memory messages + user message
-        assert planning_step.model_input_messages[0]["role"] == "system"
-        assert task in planning_step.model_input_messages[0]["content"][0]["text"]
-        assert planning_step.model_input_messages[1]["role"] == "user"
-        assert "Previous user request" in planning_step.model_input_messages[1]["content"][0]["text"]
+        update_plan_step = planning_steps[0]
+        assert (
+            len(update_plan_step.model_input_messages) == 3
+        )  # system message + memory messages (1 task message, the latest one is removed) + user message
+        assert update_plan_step.model_input_messages[0]["role"] == "system"
+        assert task in update_plan_step.model_input_messages[0]["content"][0]["text"]
+        assert update_plan_step.model_input_messages[1]["role"] == "user"
+        assert "Previous user request" in update_plan_step.model_input_messages[1]["content"][0]["text"]
 
 
 class CustomFinalAnswerTool(FinalAnswerTool):
@@ -1293,7 +1309,7 @@ class TestToolCallingAgent:
                 ChatMessageToolCall(
                     id="call_0",
                     type="function",
-                    function=ChatMessageToolCallDefinition(
+                    function=ChatMessageToolCallFunction(
                         name="final_answer", arguments={"answer1": "1", "answer2": "2"}
                     ),
                 )
@@ -1312,7 +1328,7 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "test_value"}),
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "test_value"}),
                     )
                 ],
                 "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'test_value'}",
@@ -1326,12 +1342,12 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "value1"}),
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "value1"}),
                     ),
                     ChatMessageToolCall(
                         id="call_2",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "value2"}),
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "value2"}),
                     ),
                 ],
                 "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'value1'}\nCalled Tool: 'test_tool' with arguments: {'input': 'value2'}",
@@ -1345,7 +1361,7 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="nonexistent_tool", arguments={"input": "test"}),
+                        function=ChatMessageToolCallFunction(name="nonexistent_tool", arguments={"input": "test"}),
                     )
                 ],
                 "expected_error": AgentToolExecutionError,
@@ -1356,7 +1372,7 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "error"}),
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "error"}),
                     )
                 ],
                 "expected_error": AgentToolExecutionError,
@@ -1375,7 +1391,7 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(
+                        function=ChatMessageToolCallFunction(
                             name="final_answer", arguments={"answer": "This is the final answer"}
                         ),
                     )
@@ -1391,7 +1407,7 @@ class TestToolCallingAgent:
                     ChatMessageToolCall(
                         id="call_1",
                         type="function",
-                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"wrong_param": "value"}),
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"wrong_param": "value"}),
                     )
                 ],
                 "expected_error": AgentToolCallError,
@@ -1783,7 +1799,7 @@ class TestMultiAgents:
                                 ChatMessageToolCall(
                                     id="call_0",
                                     type="function",
-                                    function=ChatMessageToolCallDefinition(
+                                    function=ChatMessageToolCallFunction(
                                         name="search_agent",
                                         arguments="Who is the current US president?",
                                     ),
@@ -1799,7 +1815,7 @@ class TestMultiAgents:
                                 ChatMessageToolCall(
                                     id="call_0",
                                     type="function",
-                                    function=ChatMessageToolCallDefinition(
+                                    function=ChatMessageToolCallFunction(
                                         name="final_answer", arguments="Final report."
                                     ),
                                 )
@@ -1846,7 +1862,7 @@ final_answer("Final report.")
                         ChatMessageToolCall(
                             id="call_0",
                             type="function",
-                            function=ChatMessageToolCallDefinition(
+                            function=ChatMessageToolCallFunction(
                                 name="final_answer",
                                 arguments="Report on the current US president",
                             ),
