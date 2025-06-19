@@ -182,6 +182,7 @@ def agglomerate_stream_deltas(
     accumulated_content = ""
     total_input_tokens = 0
     total_output_tokens = 0
+    print("STREAMDELTA2", stream_deltas, "oVER")
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
@@ -205,8 +206,7 @@ def agglomerate_stream_deltas(
                     if tool_call_delta.type:
                         tool_call.type = tool_call_delta.type
                     if tool_call_delta.function:
-                        tool_call.function = ChatMessageToolCallFunction(name="", arguments=None)
-                        if tool_call_delta.function.name:
+                        if tool_call_delta.function.name and len(tool_call_delta.function.name) > 0:
                             tool_call.function.name = tool_call_delta.function.name
                         if tool_call_delta.function.arguments:
                             tool_call.function.arguments += tool_call_delta.function.arguments
@@ -1549,37 +1549,6 @@ class OpenAIServerModel(ApiModel):
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
-            if getattr(event, "usage", None):
-                self._last_input_token_count = event.usage.prompt_tokens
-                self._last_output_token_count = event.usage.completion_tokens
-                yield ChatMessageStreamDelta(
-                    content="",
-                    token_usage=TokenUsage(
-                        input_tokens=event.usage.prompt_tokens,
-                        output_tokens=event.usage.completion_tokens,
-                    ),
-                )
-            if event.choices:
-                choice = event.choices[0]
-                if choice.delta:
-                    yield ChatMessageStreamDelta(
-                        content=choice.delta.content,
-                        tool_calls=[
-                            ChatMessageToolCallStreamDelta(
-                                index=delta.index,
-                                id=delta.id,
-                                type=delta.type,
-                                function=delta.function,
-                            )
-                            for delta in choice.delta.tool_calls
-                        ]
-                        if choice.delta.tool_calls
-                        else None,
-                    )
-                else:
-                    if not getattr(choice, "finish_reason", None):
-                        raise ValueError(f"No content or tool calls in event: {event}")
-
             if event.usage:
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens

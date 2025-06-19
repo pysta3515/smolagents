@@ -1235,7 +1235,7 @@ class TestToolCallingAgent:
 
         model = OpenAIServerModel(model_id="fakemodel")
 
-        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True)
+        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True, verbosity_level=100)
         result = agent.run("Make 2 calls to final answer: return both 'output1' and 'output2'")
         assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
         assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
