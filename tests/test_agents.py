@@ -612,11 +612,14 @@ nested_answer()
         assert step_memory_dict["timing"]["duration"] > 0.1
 
     def test_final_answer_checks(self):
+        error_string = "failed with error"
+
         def check_always_fails(final_answer, agent_memory):
             assert False, "Error raised in check"
 
         agent = CodeAgent(model=FakeCodeModel(), tools=[], final_answer_checks=[check_always_fails])
         agent.run("Dummy task.")
+        assert error_string in str(agent.write_memory_to_messages())
         assert "Error raised in check" in str(agent.write_memory_to_messages())
 
         agent = CodeAgent(
@@ -628,7 +631,7 @@ nested_answer()
         output = agent.run("Dummy task.")
         assert output == 7.2904  # Check that output is correct
         assert len([step for step in agent.memory.steps if isinstance(step, ActionStep)]) == 2
-        assert "Error raised in check" not in str(agent.write_memory_to_messages())
+        assert error_string not in str(agent.write_memory_to_messages())
 
     def test_generation_errors_are_raised(self):
         class FakeCodeModel(Model):
