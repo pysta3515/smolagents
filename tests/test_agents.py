@@ -821,11 +821,7 @@ class TestMultiStepAgent:
             (
                 1,
                 [
-                    [
-                        ChatMessage(
-                            role=MessageRole.USER, content=[{"type": "text", "text": "INITIAL_PLAN_USER_PROMPT"}]
-                        )
-                    ],
+                    [ChatMessage(role=MessageRole.USER, content="INITIAL_PLAN_USER_PROMPT")],
                 ],
             ),
             (
@@ -834,11 +830,11 @@ class TestMultiStepAgent:
                     [
                         ChatMessage(
                             role=MessageRole.SYSTEM,
-                            content=[{"type": "text", "text": "UPDATE_PLAN_SYSTEM_PROMPT"}],
+                            content="UPDATE_PLAN_SYSTEM_PROMPT",
                         ),
                         ChatMessage(
                             role=MessageRole.USER,
-                            content=[{"type": "text", "text": "UPDATE_PLAN_USER_PROMPT"}],
+                            content="UPDATE_PLAN_USER_PROMPT",
                         ),
                     ],
                 ],
@@ -880,8 +876,7 @@ class TestMultiStepAgent:
         }
         for expected_messages in expected_messages_list:
             for expected_message in expected_messages:
-                for expected_content in expected_message["content"]:
-                    expected_content["text"] = expected_message_texts[expected_content["text"]]
+                expected_message.content = expected_message_texts[expected_message.content]
         assert isinstance(planning_step, PlanningStep)
         expected_model_input_messages = expected_messages_list[0]
         model_input_messages = planning_step.model_input_messages
@@ -891,8 +886,7 @@ class TestMultiStepAgent:
             assert isinstance(message, ChatMessage)
             assert message.role in MessageRole.__members__.values()
             assert message.role == expected_message.role
-            assert isinstance(message.content, list)
-            assert len(message.content) == 1
+            assert isinstance(message.content, str)
             for content, expected_content in zip(message.content, expected_message.content):
                 assert content == expected_content
         # Test calls to model
@@ -906,8 +900,7 @@ class TestMultiStepAgent:
                 assert isinstance(message, ChatMessage)
                 assert message.role in MessageRole.__members__.values()
                 assert message.role == expected_message.role
-                assert isinstance(message.content, list)
-                assert len(message.content) == 1
+                assert isinstance(message.content, str)
                 for content, expected_content in zip(message.content, expected_message.content):
                     assert content == expected_content
 

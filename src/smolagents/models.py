@@ -217,7 +217,16 @@ def agglomerate_stream_deltas(
         role=role,
         content=accumulated_content,
         tool_calls=[
-            tool_call_stream_delta.convert_to_tool_call() for tool_call_stream_delta in accumulated_tool_calls.values()
+            ChatMessageToolCall(
+                function=ChatMessageToolCallFunction(
+                    name=tool_call_stream_delta.function.name,
+                    arguments=tool_call_stream_delta.function.arguments,
+                ),
+                id=tool_call_stream_delta.id or "",
+                type="function",
+            )
+            for tool_call_stream_delta in accumulated_tool_calls.values()
+            if tool_call_stream_delta.function
         ],
         token_usage=TokenUsage(
             input_tokens=total_input_tokens,
