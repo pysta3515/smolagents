@@ -291,7 +291,7 @@ class TestInferenceClientModel:
         messages = [ChatMessage(role=MessageRole.USER, content="Test message")]
         _ = model(messages)
         # Verify that the role conversion was applied
-        assert model.client.chat_completion.call_args.kwargs["messages"][0].role == "system", (
+        assert model.client.chat_completion.call_args.kwargs["messages"][0]["role"] == "system", (
             "role conversion should be applied"
         )
 
@@ -554,10 +554,10 @@ def test_get_clean_message_list_basic():
     ]
     result = get_clean_message_list(messages)
     assert len(result) == 2
-    assert result[0].role == "user"
-    assert result[0].content[0]["text"] == "Hello!"
-    assert result[1].role == "assistant"
-    assert result[1].content[0]["text"] == "Hi there!"
+    assert result[0]["role"] == "user"
+    assert result[0]["content"][0]["text"] == "Hello!"
+    assert result[1]["role"] == "assistant"
+    assert result[1]["content"][0]["text"] == "Hi there!"
 
 
 def test_get_clean_message_list_role_conversions():
@@ -567,10 +567,10 @@ def test_get_clean_message_list_role_conversions():
     ]
     result = get_clean_message_list(messages, role_conversions={"tool-call": "assistant", "tool-response": "user"})
     assert len(result) == 2
-    assert result[0].role == "assistant"
-    assert result[0].content[0]["text"] == "Calling tool..."
-    assert result[1].role == "user"
-    assert result[1].content[0]["text"] == "Tool response"
+    assert result[0]["role"] == "assistant"
+    assert result[0]["content"][0]["text"] == "Calling tool..."
+    assert result[1]["role"] == "user"
+    assert result[1]["content"][0]["text"] == "Tool response"
 
 
 @pytest.mark.parametrize(
@@ -578,7 +578,7 @@ def test_get_clean_message_list_role_conversions():
     [
         (
             False,
-            ChatMessage(
+            dict(
                 role=MessageRole.USER,
                 content=[
                     {"type": "image", "image": "encoded_image"},
@@ -588,7 +588,7 @@ def test_get_clean_message_list_role_conversions():
         ),
         (
             True,
-            ChatMessage(
+            dict(
                 role=MessageRole.USER,
                 content=[
                     {"type": "image_url", "image_url": {"url": "data:image/png;base64,encoded_image"}},
@@ -619,8 +619,8 @@ def test_get_clean_message_list_flatten_messages_as_text():
     ]
     result = get_clean_message_list(messages, flatten_messages_as_text=True)
     assert len(result) == 1
-    assert result[0].role == "user"
-    assert result[0].content == "Hello!\nHow are you?"
+    assert result[0]["role"] == "user"
+    assert result[0]["content"] == "Hello!\nHow are you?"
 
 
 @pytest.mark.parametrize(

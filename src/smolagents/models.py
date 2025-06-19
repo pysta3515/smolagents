@@ -914,7 +914,7 @@ class TransformersModel(Model):
             or 1024
         )
         prompt_tensor = (self.processor if hasattr(self, "processor") else self.tokenizer).apply_chat_template(
-            [message.dict() for message in messages],
+            messages,
             tools=tools,
             return_tensors="pt",
             add_generation_prompt=True,
