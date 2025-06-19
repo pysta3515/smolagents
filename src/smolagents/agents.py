@@ -117,6 +117,12 @@ class ActionOutput:
     is_final_answer: bool
 
 
+@dataclass
+class ToolOutput:
+    output: Any
+    is_final_answer: bool
+
+
 class PlanningPromptTemplate(TypedDict):
     """
     Prompt templates for the planning step.
@@ -210,6 +216,7 @@ StreamEvent: TypeAlias = Union[
     ChatMessageStreamDelta,
     ChatMessageToolCall,
     ActionOutput,
+    ToolOutput,
     PlanningStep,
     ActionStep,
     FinalAnswerStep,
@@ -500,10 +507,10 @@ You have been provided with these additional arguments, that you can access usin
             try:
                 for output in self._step_stream(action_step):
                     # Yield streaming deltas
-                    if not isinstance(output, ActionOutput):
+                    if not isinstance(output, (ActionOutput, ToolOutput)):
                         yield output
 
-                    if isinstance(output, ActionOutput) and output.is_final_answer:
+                    if isinstance(output, (ActionOutput, ToolOutput)) and output.is_final_answer:
                         if self.final_answer_checks:
                             self._validate_final_answer(output.output)
                         returned_final_answer = True
@@ -696,7 +703,7 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput | ToolOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1213,7 +1220,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ToolOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1335,14 +1342,14 @@ class ToolCallingAgent(MultiStepAgent):
             if len(parallel_calls) == 1:
                 # If there's only one call, process it directly
                 observations.append(process_single_tool_call(parallel_calls[0]))
-                yield ActionOutput(output=None, is_final_answer=False)
+                yield ToolOutput(output=None, is_final_answer=False)
             else:
                 # If multiple tool calls, process them in parallel
                 with ThreadPoolExecutor(self.max_tool_threads) as executor:
                     futures = [executor.submit(process_single_tool_call, call_info) for call_info in parallel_calls]
                     for future in as_completed(futures):
                         observations.append(future.result())
-                        yield ActionOutput(output=None, is_final_answer=False)
+                        yield ToolOutput(output=None, is_final_answer=False)
 
         # Process final_answer call if present
         if final_answer_call:
@@ -1372,7 +1379,7 @@ class ToolCallingAgent(MultiStepAgent):
                     level=LogLevel.INFO,
                 )
             memory_step.action_output = final_answer
-            yield ActionOutput(output=final_answer, is_final_answer=True)
+            yield ToolOutput(output=final_answer, is_final_answer=True)
 
         # Update memory step with all results
         if model_outputs:
