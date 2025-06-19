@@ -572,7 +572,10 @@ You have been provided with these additional arguments, that you can access usin
                     content=[
                         {
                             "type": "text",
-                            "text": self.prompt_templates["planning"]["initial_plan"],
+                            "text": populate_template(
+                                self.prompt_templates["planning"]["initial_plan"],
+                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
+                            ),
                         }
                     ],
                 )
