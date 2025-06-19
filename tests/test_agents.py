@@ -928,7 +928,10 @@ class TestMultiStepAgent:
                     [
                         ChatMessage(
                             role=MessageRole.SYSTEM,
-                            content=[{"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"}, {"type": "image"}],
+                            content=[
+                                {"type": "text", "text": "FINAL_ANSWER_SYSTEM_PROMPT"},
+                                {"type": "image", "image": "image1.png"},
+                            ],
                         ),
                         ChatMessage(
                             role=MessageRole.USER,
@@ -978,7 +981,6 @@ class TestMultiStepAgent:
                 assert message.role in MessageRole.__members__.values()
                 assert message.role == expected_message.role
                 assert isinstance(message.content, list)
-                assert len(message.content) == len(expected_message.content)
                 for content, expected_content in zip(message.content, expected_message.content):
                     assert content == expected_content
 

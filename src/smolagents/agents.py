@@ -276,15 +276,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -338,9 +338,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
 
     def _setup_tools(self, tools, add_base_tools):
@@ -569,10 +569,12 @@ You have been provided with these additional arguments, that you can access usin
             input_messages = [
                 ChatMessage(
                     role=MessageRole.USER,
-                    content=populate_template(
-                        self.prompt_templates["planning"]["initial_plan"],
-                        variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
-                    ),
+                    content=[
+                        {
+                            "type": "text",
+                            "text": self.prompt_templates["planning"]["initial_plan"],
+                        }
+                    ],
                 )
             ]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
@@ -608,21 +610,31 @@ You have been provided with these additional arguments, that you can access usin
             memory_messages = self.write_memory_to_messages(summary_mode=True)
             plan_update_pre = ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=populate_template(
-                    self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
+                        ),
+                    }
+                ],
             )
             plan_update_post = ChatMessage(
                 role=MessageRole.USER,
-                content=populate_template(
-                    self.prompt_templates["planning"]["update_plan_post_messages"],
-                    variables={
-                        "task": task,
-                        "tools": self.tools,
-                        "managed_agents": self.managed_agents,
-                        "remaining_steps": (self.max_steps - step),
-                    },
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["planning"]["update_plan_post_messages"],
+                            variables={
+                                "task": task,
+                                "tools": self.tools,
+                                "managed_agents": self.managed_agents,
+                                "remaining_steps": (self.max_steps - step),
+                            },
+                        ),
+                    }
+                ],
             )
             # remove last message from memory_messages because it is the current task
             input_messages = [plan_update_pre] + memory_messages[:-1] + [plan_update_post]
@@ -756,9 +768,14 @@ You have been provided with these additional arguments, that you can access usin
         messages.append(
             ChatMessage(
                 role=MessageRole.USER,
-                content=populate_template(
-                    self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
+                        ),
+                    }
+                ],
             )
         )
         try:
