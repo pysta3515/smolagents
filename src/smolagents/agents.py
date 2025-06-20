@@ -373,6 +373,10 @@ class MultiStepAgent(ABC):
                 agent.name and agent.description for agent in managed_agents
             ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
+            # Ensure managed agents can be called as tools by the model: set their inputs and output_type
+            for agent in self.managed_agents.values():
+                agent.inputs = {"task": {"type": "string", "description": "Long detailed description of the task."}}
+                agent.output_type = "string"
 
     def _setup_tools(self, tools, add_base_tools):
         assert all(isinstance(tool, Tool) for tool in tools), "All elements must be instance of Tool (or a subclass)"
@@ -599,10 +603,15 @@ You have been provided with these additional arguments, that you can access usin
             input_messages = [
                 ChatMessage(
                     role=MessageRole.USER,
-                    content=populate_template(
-                        self.prompt_templates["planning"]["initial_plan"],
-                        variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
-                    ),
+                    content=[
+                        {
+                            "type": "text",
+                            "text": populate_template(
+                                self.prompt_templates["planning"]["initial_plan"],
+                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
+                            ),
+                        }
+                    ],
                 )
             ]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
@@ -638,21 +647,31 @@ You have been provided with these additional arguments, that you can access usin
             memory_messages = self.write_memory_to_messages(summary_mode=True)
             plan_update_pre = ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=populate_template(
-                    self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["planning"]["update_plan_pre_messages"], variables={"task": task}
+                        ),
+                    }
+                ],
             )
             plan_update_post = ChatMessage(
                 role=MessageRole.USER,
-                content=populate_template(
-                    self.prompt_templates["planning"]["update_plan_post_messages"],
-                    variables={
-                        "task": task,
-                        "tools": self.tools,
-                        "managed_agents": self.managed_agents,
-                        "remaining_steps": (self.max_steps - step),
-                    },
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["planning"]["update_plan_post_messages"],
+                            variables={
+                                "task": task,
+                                "tools": self.tools,
+                                "managed_agents": self.managed_agents,
+                                "remaining_steps": (self.max_steps - step),
+                            },
+                        ),
+                    }
+                ],
             )
             # remove last message from memory_messages because it is the current task
             input_messages = [plan_update_pre] + memory_messages[:-1] + [plan_update_post]
@@ -787,9 +806,14 @@ You have been provided with these additional arguments, that you can access usin
         messages.append(
             ChatMessage(
                 role=MessageRole.USER,
-                content=populate_template(
-                    self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
-                ),
+                content=[
+                    {
+                        "type": "text",
+                        "text": populate_template(
+                            self.prompt_templates["final_answer"]["post_messages"], variables={"task": task}
+                        ),
+                    }
+                ],
             )
         )
         try:
@@ -1224,6 +1248,11 @@ class ToolCallingAgent(MultiStepAgent):
         # Tool calling setup
         self.max_tool_threads = max_tool_threads
 
+    @property
+    def tools_and_managed_agents(self):
+        """Returns a combined list of tools and managed agents."""
+        return list(self.tools.values()) + list(self.managed_agents.values())
+
     def initialize_system_prompt(self) -> str:
         system_prompt = populate_template(
             self.prompt_templates["system_prompt"],
@@ -1253,7 +1282,7 @@ class ToolCallingAgent(MultiStepAgent):
                 output_stream = self.model.generate_stream(
                     input_messages,
                     stop_sequences=["Observation:", "Calling tools:"],
-                    tools_to_call_from=list(self.tools.values()),
+                    tools_to_call_from=self.tools_and_managed_agents,
                 )
 
                 chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
@@ -1269,7 +1298,7 @@ class ToolCallingAgent(MultiStepAgent):
                 chat_message: ChatMessage = self.model.generate(
                     input_messages,
                     stop_sequences=["Observation:", "Calling tools:"],
-                    tools_to_call_from=list(self.tools.values()),
+                    tools_to_call_from=self.tools_and_managed_agents,
                 )
 
                 self.logger.log_markdown(

@@ -166,8 +166,7 @@ class TaskStep(MemoryStep):
     def to_messages(self, summary_mode: bool = False) -> list[ChatMessage]:
         content = [{"type": "text", "text": f"New task:\n{self.task}"}]
         if self.task_images:
-            for image in self.task_images:
-                content.append({"type": "image", "image": image})
+            content.extend([{"type": "image", "image": image} for image in self.task_images])
 
         return [ChatMessage(role=MessageRole.USER, content=content)]
 

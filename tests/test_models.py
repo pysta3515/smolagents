@@ -395,7 +395,7 @@ class TestLiteLLMRouterModel:
             {"model_name": "llama-3.3-70b", "litellm_params": {"model": "groq/llama-3.3-70b"}},
             {"model_name": "llama-3.3-70b", "litellm_params": {"model": "cerebras/llama-3.3-70b"}},
         ]
-        with patch("litellm.Router") as mock_router:
+        with patch("litellm.router.Router") as mock_router:
             router_model = LiteLLMRouterModel(
                 model_id="model-group-1", model_list=model_list, client_kwargs={"routing_strategy": "simple-shuffle"}
             )
@@ -578,7 +578,7 @@ def test_get_clean_message_list_role_conversions():
     [
         (
             False,
-            ChatMessage(
+            dict(
                 role=MessageRole.USER,
                 content=[
                     {"type": "image", "image": "encoded_image"},
@@ -588,7 +588,7 @@ def test_get_clean_message_list_role_conversions():
         ),
         (
             True,
-            ChatMessage(
+            dict(
                 role=MessageRole.USER,
                 content=[
                     {"type": "image_url", "image_url": {"url": "data:image/png;base64,encoded_image"}},
@@ -619,8 +619,8 @@ def test_get_clean_message_list_flatten_messages_as_text():
     ]
     result = get_clean_message_list(messages, flatten_messages_as_text=True)
     assert len(result) == 1
-    assert result[0].role == "user"
-    assert result[0].content == "Hello!\nHow are you?"
+    assert result[0]["role"] == "user"
+    assert result[0]["content"] == "Hello!\nHow are you?"
 
 
 @pytest.mark.parametrize(

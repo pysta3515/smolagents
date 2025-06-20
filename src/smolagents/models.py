@@ -205,8 +205,7 @@ def agglomerate_stream_deltas(
                     if tool_call_delta.type:
                         tool_call.type = tool_call_delta.type
                     if tool_call_delta.function:
-                        tool_call.function = ChatMessageToolCallFunction(name="", arguments=None)
-                        if tool_call_delta.function.name:
+                        if tool_call_delta.function.name and len(tool_call_delta.function.name) > 0:
                             tool_call.function.name = tool_call_delta.function.name
                         if tool_call_delta.function.arguments:
                             tool_call.function.arguments += tool_call_delta.function.arguments
@@ -217,7 +216,16 @@ def agglomerate_stream_deltas(
         role=role,
         content=accumulated_content,
         tool_calls=[
-            tool_call_stream_delta.convert_to_tool_call() for tool_call_stream_delta in accumulated_tool_calls.values()
+            ChatMessageToolCall(
+                function=ChatMessageToolCallFunction(
+                    name=tool_call_stream_delta.function.name,
+                    arguments=tool_call_stream_delta.function.arguments,
+                ),
+                id=tool_call_stream_delta.id or "",
+                type="function",
+            )
+            for tool_call_stream_delta in accumulated_tool_calls.values()
+            if tool_call_stream_delta.function
         ],
         token_usage=TokenUsage(
             input_tokens=total_input_tokens,
@@ -266,10 +274,10 @@ def get_clean_message_list(
     role_conversions: dict[MessageRole, MessageRole] | dict[str, str] = {},
     convert_images_to_image_urls: bool = False,
     flatten_messages_as_text: bool = False,
-) -> list[ChatMessage]:
+) -> list[dict[str, Any]]:
     """
+    Creates a list of messages to give as input to the LLM. These messages are dictionaries and chat template compatible with transformers LLM chat template.
     Subsequent messages with the same role will be concatenated to a single message.
-    output_message_list is a list of messages that will be used to generate the final message that is chat template compatible with transformers LLM chat template.
 
     Args:
         message_list (`list[dict[str, str]]`): List of chat messages.
@@ -277,7 +285,7 @@ def get_clean_message_list(
         convert_images_to_image_urls (`bool`, default `False`): Whether to convert images to image URLs.
         flatten_messages_as_text (`bool`, default `False`): Whether to flatten messages as text.
     """
-    output_message_list: list[ChatMessage] = []
+    output_message_list: list[dict[str, Any]] = []
     message_list = deepcopy(message_list)  # Avoid modifying the original list
     for message in message_list:
         role = message.role
@@ -302,13 +310,13 @@ def get_clean_message_list(
                     else:
                         element["image"] = encode_image_base64(element["image"])
 
-        if len(output_message_list) > 0 and message.role == output_message_list[-1].role:
+        if len(output_message_list) > 0 and message.role == output_message_list[-1]["role"]:
             assert isinstance(message.content, list), "Error: wrong content:" + str(message.content)
             if flatten_messages_as_text:
-                output_message_list[-1].content += "\n" + message.content[0]["text"]
+                output_message_list[-1]["content"] += "\n" + message.content[0]["text"]
             else:
                 for el in message.content:
-                    if el["type"] == "text" and output_message_list[-1].content[-1]["type"] == "text":
+                    if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
                         # Merge consecutive text messages rather than creating new ones
                         output_message_list[-1].content[-1]["text"] += "\n" + el["text"]
                     else:
@@ -318,7 +326,12 @@ def get_clean_message_list(
                 content = message.content[0]["text"]
             else:
                 content = message.content
-            output_message_list.append(ChatMessage(role=message.role, content=content))
+            output_message_list.append(
+                {
+                    "role": message.role,
+                    "content": content,
+                }
+            )
     return output_message_list
 
 
@@ -414,7 +427,7 @@ class Model:
         """
         # Clean and standardize the message list
         flatten_messages_as_text = kwargs.pop("flatten_messages_as_text", self.flatten_messages_as_text)
-        messages = get_clean_message_list(
+        messages_as_dicts = get_clean_message_list(
             messages,
             role_conversions=custom_role_conversions or tool_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,
@@ -423,7 +436,7 @@ class Model:
         # Use self.kwargs as the base configuration
         completion_kwargs = {
             **self.kwargs,
-            "messages": messages,
+            "messages": messages_as_dicts,
         }
 
         # Handle specific parameters
@@ -1567,37 +1580,6 @@ class OpenAIServerModel(ApiModel):
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
         ):
-            if getattr(event, "usage", None):
-                self._last_input_token_count = event.usage.prompt_tokens
-                self._last_output_token_count = event.usage.completion_tokens
-                yield ChatMessageStreamDelta(
-                    content="",
-                    token_usage=TokenUsage(
-                        input_tokens=event.usage.prompt_tokens,
-                        output_tokens=event.usage.completion_tokens,
-                    ),
-                )
-            if event.choices:
-                choice = event.choices[0]
-                if choice.delta:
-                    yield ChatMessageStreamDelta(
-                        content=choice.delta.content,
-                        tool_calls=[
-                            ChatMessageToolCallStreamDelta(
-                                index=delta.index,
-                                id=delta.id,
-                                type=delta.type,
-                                function=delta.function,
-                            )
-                            for delta in choice.delta.tool_calls
-                        ]
-                        if choice.delta.tool_calls
-                        else None,
-                    )
-                else:
-                    if not getattr(choice, "finish_reason", None):
-                        raise ValueError(f"No content or tool calls in event: {event}")
-
             if event.usage:
                 self._last_input_token_count = event.usage.prompt_tokens
                 self._last_output_token_count = event.usage.completion_tokens
@@ -1661,9 +1643,7 @@ class OpenAIServerModel(ApiModel):
         )
 
 
-class OpenAIModel(OpenAIServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
+OpenAIModel = OpenAIServerModel
 
 
 class AzureOpenAIServerModel(OpenAIServerModel):
@@ -1723,9 +1703,7 @@ class AzureOpenAIServerModel(OpenAIServerModel):
         return openai.AzureOpenAI(**self.client_kwargs)
 
 
-class AzureOpenAIModel(AzureOpenAIServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
+AzureOpenAIModel = AzureOpenAIServerModel
 
 
 class AmazonBedrockServerModel(ApiModel):
@@ -1906,10 +1884,7 @@ class AmazonBedrockServerModel(ApiModel):
         )
 
 
-class AmazonBedrockModel(AmazonBedrockServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
-
+AmazonBedrockModel = AmazonBedrockServerModel
 
 __all__ = [
     "MessageRole",
