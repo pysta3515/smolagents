@@ -1121,7 +1121,7 @@ class TestToolCallingAgent:
                 ChatMessageToolCall(
                     id="call_0",
                     type="function",
-                    function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "test_value"}),
+                    function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "test_value"}),
                 )
             ],
         )
