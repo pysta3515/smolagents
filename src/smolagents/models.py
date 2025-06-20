@@ -318,9 +318,9 @@ def get_clean_message_list(
                 for el in message.content:
                     if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
                         # Merge consecutive text messages rather than creating new ones
-                        output_message_list[-1].content[-1]["text"] += "\n" + el["text"]
+                        output_message_list[-1]["content"][-1]["text"] += "\n" + el["text"]
                     else:
-                        output_message_list[-1].content.append(el)
+                        output_message_list[-1]["content"].append(el)
         else:
             if flatten_messages_as_text:
                 content = message.content[0]["text"]
@@ -488,14 +488,14 @@ class Model:
         """
         raise NotImplementedError("This method must be implemented in child classes")
 
-    def generat_stream(
+    def generate_stream(
         self,
-        messages: list[Message],
+        messages: list[ChatMessage],
         stop_sequences: list[str] | None = None,
         response_format: dict[str, str] | None = None,
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
-    ) -> ChatMessage:
+    ) -> Generator[ChatMessageStreamDelta]:
         """Process the input messages and return the model's response in streaming mode.
 
         Parameters:
@@ -941,7 +941,7 @@ class TransformersModel(Model):
             or 1024
         )
         prompt_tensor = (self.processor if hasattr(self, "processor") else self.tokenizer).apply_chat_template(
-            [message.dict() for message in messages],
+            messages,
             tools=tools,
             return_tensors="pt",
             add_generation_prompt=True,
