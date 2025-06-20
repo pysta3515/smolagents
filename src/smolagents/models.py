@@ -276,8 +276,8 @@ def get_clean_message_list(
     flatten_messages_as_text: bool = False,
 ) -> list[dict[str, Any]]:
     """
+    Creates a list of messages to give as input to the LLM. These messages are dictionaries and chat template compatible with transformers LLM chat template.
     Subsequent messages with the same role will be concatenated to a single message.
-    output_message_list is a list of messages that will be used to generate the final message that is chat template compatible with transformers LLM chat template.
 
     Args:
         message_list (`list[dict[str, str]]`): List of chat messages.
@@ -427,7 +427,7 @@ class Model:
         """
         # Clean and standardize the message list
         flatten_messages_as_text = kwargs.pop("flatten_messages_as_text", self.flatten_messages_as_text)
-        messages = get_clean_message_list(
+        messages_as_dicts = get_clean_message_list(
             messages,
             role_conversions=custom_role_conversions or tool_role_conversions,
             convert_images_to_image_urls=convert_images_to_image_urls,
@@ -436,7 +436,7 @@ class Model:
         # Use self.kwargs as the base configuration
         completion_kwargs = {
             **self.kwargs,
-            "messages": messages,
+            "messages": messages_as_dicts,
         }
 
         # Handle specific parameters
@@ -1616,9 +1616,7 @@ class OpenAIServerModel(ApiModel):
         )
 
 
-class OpenAIModel(OpenAIServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
+OpenAIModel = OpenAIServerModel
 
 
 class AzureOpenAIServerModel(OpenAIServerModel):
@@ -1678,9 +1676,7 @@ class AzureOpenAIServerModel(OpenAIServerModel):
         return openai.AzureOpenAI(**self.client_kwargs)
 
 
-class AzureOpenAIModel(AzureOpenAIServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
+AzureOpenAIModel = AzureOpenAIServerModel
 
 
 class AmazonBedrockServerModel(ApiModel):
@@ -1861,10 +1857,7 @@ class AmazonBedrockServerModel(ApiModel):
         )
 
 
-class AmazonBedrockModel(AmazonBedrockServerModel):
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
-
+AmazonBedrockModel = AmazonBedrockServerModel
 
 __all__ = [
     "MessageRole",
