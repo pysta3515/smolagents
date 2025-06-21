@@ -52,7 +52,7 @@ class ActionStep(MemoryStep):
     error: AgentError | None = None
     model_output_message: ChatMessage | None = None
     model_output: str | None = None
-    code_output: str | None = None
+    code_action: str | None = None
     observations: str | None = None
     observations_images: list["PIL.Image.Image"] | None = None
     action_output: Any = None
@@ -69,7 +69,7 @@ class ActionStep(MemoryStep):
             "error": self.error.dict() if self.error else None,
             "model_output_message": self.model_output_message.dict() if self.model_output_message else None,
             "model_output": self.model_output,
-            "code_output": self.code_output,
+            "code_action": self.code_action,
             "observations": self.observations,
             "observations_images": [image.tobytes() for image in self.observations_images]
             if self.observations_images
@@ -229,10 +229,10 @@ class AgentMemory:
                     logger.log_messages(step.model_input_messages, level=LogLevel.ERROR)
                 logger.log_markdown(title="Agent output:", content=step.plan, level=LogLevel.ERROR)
 
-    def return_all_code_outputs(self) -> str:
-        """Returns all code outputs from the agent's steps, concatenated as a single script."""
+    def return_full_code(self) -> str:
+        """Returns all code actions from the agent's steps, concatenated as a single script."""
         return "\n\n".join(
-            [step.code_output for step in self.steps if isinstance(step, ActionStep) and step.code_output is not None]
+            [step.code_action for step in self.steps if isinstance(step, ActionStep) and step.code_action is not None]
         )
 
 
