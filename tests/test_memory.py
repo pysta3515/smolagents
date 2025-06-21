@@ -22,6 +22,15 @@ class TestAgentMemory:
         assert memory.system_prompt.system_prompt == system_prompt
         assert memory.steps == []
 
+    def test_return_all_code_outputs(self):
+        memory = AgentMemory(system_prompt="This is a system prompt.")
+        memory.steps = [
+            ActionStep(step_number=1, timing=Timing(start_time=0.0, end_time=1.0), code_output="print('Hello')"),
+            ActionStep(step_number=2, timing=Timing(start_time=0.0, end_time=1.0), code_output=None),
+            ActionStep(step_number=3, timing=Timing(start_time=0.0, end_time=1.0), code_output="print('World')"),
+        ]  # type: ignore
+        assert memory.return_all_code_outputs() == "print('Hello')\n\nprint('World')"
+
 
 class TestMemoryStep:
     def test_initialization(self):

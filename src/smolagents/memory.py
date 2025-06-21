@@ -229,5 +229,11 @@ class AgentMemory:
                     logger.log_messages(step.model_input_messages, level=LogLevel.ERROR)
                 logger.log_markdown(title="Agent output:", content=step.plan, level=LogLevel.ERROR)
 
+    def return_all_code_outputs(self) -> str:
+        """Returns all code outputs from the agent's steps, concatenated as a single script."""
+        return "\n\n".join(
+            [step.code_output for step in self.steps if isinstance(step, ActionStep) and step.code_output is not None]
+        )
+
 
 __all__ = ["AgentMemory"]
