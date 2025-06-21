@@ -1580,8 +1580,8 @@ class TestCodeAgent:
         assert isinstance(output, AgentText)
         assert output == "got an error"
         assert '    print("Failing due to unexpected indent")' in str(agent.memory.steps)
-        assert isinstance(agent.memory.steps[-1], ActionStep)
-        assert str(agent.memory.steps[-1].code_output) == str("""a = 2
+        assert isinstance(agent.memory.steps[-2], ActionStep)
+        assert str(agent.memory.steps[-2].code_output) == str("""a = 2
 b = a * 2
     print("Failing due to unexpected indent")
 print("Ok, calculation done!")""")
