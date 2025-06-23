@@ -35,11 +35,6 @@ Get started with smolagents in just a few minutes! This guide will show you how 
 Install smolagents with pip:
 
 ```bash
-pip install smolagents
-```
-
-For additional features, you can install optional dependencies:
-```bash
 pip install smolagents[toolkit]  # Includes default tools like web search
 ```
 
@@ -65,7 +60,7 @@ That's it! Your agent will use Python code to solve the task and return the resu
 
 ### Adding Tools
 
-Let's make our agent more capable by adding some tools (requires smolagents[toolkit]):
+Let's make our agent more capable by adding some tools:
 
 ```python
 from smolagents import CodeAgent, InferenceClientModel, DuckDuckGoSearchTool
