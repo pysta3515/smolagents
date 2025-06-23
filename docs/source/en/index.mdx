@@ -65,17 +65,15 @@ That's it! Your agent will use Python code to solve the task and return the resu
 
 ### Adding Tools
 
-Let's make our agent more capable by adding some tools:
+Let's make our agent more capable by adding some tools (requires smolagents[toolkit]):
 
 ```python
-from smolagents import CodeAgent, InferenceClientModel
+from smolagents import CodeAgent, InferenceClientModel, DuckDuckGoSearchTool
 
-# Initialize with default tools (requires smolagents[toolkit])
 model = InferenceClientModel()
 agent = CodeAgent(
-    tools=[],  # Empty list since we'll use default tools
+    tools=[DuckDuckGoSearchTool()],
     model=model,
-    add_base_tools=True  # This adds web search and other default tools
 )
 
 # Now the agent can search the web!
