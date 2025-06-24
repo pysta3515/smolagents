@@ -409,7 +409,9 @@ class TestAgent:
 
             return PIL.Image.open(shared_datadir / "000000039769.png")
 
-        agent = ToolCallingAgent(tools=[fake_image_generation_tool], model=FakeToolCallModelImage())
+        agent = ToolCallingAgent(
+            tools=[fake_image_generation_tool], model=FakeToolCallModelImage(), verbosity_level=10
+        )
         output = agent.run("Make me an image.")
         assert isinstance(output, AgentImage)
         assert isinstance(agent.state["image.png"], PIL.Image.Image)

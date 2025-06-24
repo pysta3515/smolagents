@@ -1432,23 +1432,21 @@ class ToolCallingAgent(MultiStepAgent):
             # Call tool with appropriate arguments
             if isinstance(arguments, dict):
                 return tool(**arguments) if is_managed_agent else tool(**arguments, sanitize_inputs_outputs=True)
-            elif isinstance(arguments, str):
-                return tool(arguments) if is_managed_agent else tool(arguments, sanitize_inputs_outputs=True)
             else:
-                raise TypeError(f"Unsupported arguments type: {type(arguments)}")
+                return tool(arguments) if is_managed_agent else tool(arguments, sanitize_inputs_outputs=True)
 
         except TypeError as e:
             # Handle invalid arguments
             description = getattr(tool, "description", "No description")
             if is_managed_agent:
                 error_msg = (
-                    f"Invalid request to team member '{tool_name}' with arguments {json.dumps(arguments)}: {e}\n"
+                    f"Invalid request to team member '{tool_name}' with arguments {str(arguments)}: {e}\n"
                     "You should call this team member with a valid request.\n"
                     f"Team member description: {description}"
                 )
             else:
                 error_msg = (
-                    f"Invalid call to tool '{tool_name}' with arguments {json.dumps(arguments)}: {e}\n"
+                    f"Invalid call to tool '{tool_name}' with arguments {str(arguments)}: {e}\n"
                     "You should call this tool with correct input arguments.\n"
                     f"Expected inputs: {json.dumps(tool.inputs)}\n"
                     f"Returns output type: {tool.output_type}\n"
