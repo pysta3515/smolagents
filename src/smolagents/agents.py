@@ -84,7 +84,6 @@ from .utils import (
     AgentGenerationError,
     AgentMaxStepsError,
     AgentParsingError,
-    AgentToolCallError,
     AgentToolExecutionError,
     extract_code_from_text,
     is_valid_name,
@@ -1330,11 +1329,11 @@ class ToolCallingAgent(MultiStepAgent):
         observations = []
         parallel_calls: list[ToolCall] = []
         assert chat_message.tool_calls is not None
-        for tool_call in chat_message.tool_calls:
-            tool_call = ToolCall(name=tool_call.function.name, arguments=tool_call.function.arguments, id=tool_call.id)
-            tool_name = tool_call.name
-            tool_arguments = tool_call.arguments
-            model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
+        for chat_tool_call in chat_message.tool_calls:
+            tool_call = ToolCall(
+                name=chat_tool_call.function.name, arguments=chat_tool_call.function.arguments, id=chat_tool_call.id
+            )
+            model_outputs.append(str(f"Called Tool: '{tool_call.name}' with arguments: {tool_call.arguments}"))
             yield tool_call
             parallel_calls.append(tool_call)
 
@@ -1367,8 +1366,8 @@ class ToolCallingAgent(MultiStepAgent):
             is_final_answer = tool_name == "final_answer"
 
             # Manage state variables
-            if observation in self.state.keys():
-                observation = self.state[observation]
+            if is_final_answer and tool_call_result in self.state.keys():
+                tool_call_result = self.state[tool_call_result]
             return ToolOutput(
                 id=tool_call.id, output=tool_call_result, is_final_answer=is_final_answer, observation=observation
             )
@@ -1390,7 +1389,7 @@ class ToolCallingAgent(MultiStepAgent):
 
         memory_step.model_output = "\n".join(model_outputs)
         memory_step.tool_calls = parallel_calls
-        memory_step.observations = "\n".join(observations)
+        memory_step.observations = "\n".join([str(observation) for observation in observations])
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
         """Replace string values in arguments with their corresponding state values if they exist."""
@@ -1429,25 +1428,6 @@ class ToolCallingAgent(MultiStepAgent):
                 return tool(**arguments) if is_managed_agent else tool(**arguments, sanitize_inputs_outputs=True)
             else:
                 return tool(arguments) if is_managed_agent else tool(arguments, sanitize_inputs_outputs=True)
-
-        except TypeError as e:
-            # Handle invalid arguments
-            description = getattr(tool, "description", "No description")
-            if is_managed_agent:
-                error_msg = (
-                    f"Invalid request to team member '{tool_name}' with arguments {str(arguments)}: {e}\n"
-                    "You should call this team member with a valid request.\n"
-                    f"Team member description: {description}"
-                )
-            else:
-                error_msg = (
-                    f"Invalid call to tool '{tool_name}' with arguments {str(arguments)}: {e}\n"
-                    "You should call this tool with correct input arguments.\n"
-                    f"Expected inputs: {json.dumps(tool.inputs)}\n"
-                    f"Returns output type: {tool.output_type}\n"
-                    f"Tool description: '{description}'"
-                )
-            raise AgentToolCallError(error_msg, self.logger) from e
 
         except Exception as e:
             # Handle execution errors
