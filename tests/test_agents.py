@@ -439,7 +439,7 @@ class TestAgent:
         assert output == "The image is a cat."
 
     def test_fake_code_agent(self):
-        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModel())
+        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModel(), verbosity_level=10)
         output = agent.run("What is 2 multiplied by 3.6452?")
         assert isinstance(output, float)
         assert output == 7.2904
@@ -540,6 +540,7 @@ class TestAgent:
             model=FakeCodeModelFunctionDef(),
             max_steps=2,
             additional_authorized_imports=["numpy"],
+            verbosity_level=100,
         )
         res = agent.run("ok")
         assert res[0] == 0.5

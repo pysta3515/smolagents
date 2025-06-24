@@ -519,21 +519,20 @@ You have been provided with these additional arguments, that you can access usin
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
                 for output in self._step_stream(action_step):
-                    # Yield streaming deltas
-                    if isinstance(output, ActionOutput):
+                    # Yield all
+                    yield output
+
+                    if isinstance(output, ActionOutput) and output.is_final_answer:
                         final_answer = output.output
-                    else:
-                        yield output
+                        self.logger.log(
+                            Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
+                            level=LogLevel.INFO,
+                        )
 
-                self.logger.log(
-                    Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
-                    level=LogLevel.INFO,
-                )
-
-                if self.final_answer_checks:
-                    self._validate_final_answer(final_answer)
-                returned_final_answer = True
-                action_step.is_final_answer = True
+                        if self.final_answer_checks:
+                            self._validate_final_answer(final_answer)
+                        returned_final_answer = True
+                        action_step.is_final_answer = True
 
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
@@ -726,7 +725,9 @@ You have been provided with these additional arguments, that you can access usin
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput | ToolOutput]:
+    def _step_stream(
+        self, memory_step: ActionStep
+    ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1248,7 +1249,9 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ToolOutput | ActionOutput]:
+    def _step_stream(
+        self, memory_step: ActionStep
+    ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1287,7 +1290,7 @@ class ToolCallingAgent(MultiStepAgent):
                 if chat_message.content is None and chat_message.raw is not None:
                     log_content = str(chat_message.raw)
                 else:
-                    log_content = chat_message.content or ""
+                    log_content = str(chat_message.content) or ""
 
                 self.logger.log_markdown(
                     content=log_content,
@@ -1297,7 +1300,7 @@ class ToolCallingAgent(MultiStepAgent):
 
             # Record model output
             memory_step.model_output_message = chat_message
-            memory_step.model_output = chat_message.content
+            memory_step.model_output = str(chat_message.content)
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
@@ -1311,20 +1314,27 @@ class ToolCallingAgent(MultiStepAgent):
             for tool_call in chat_message.tool_calls:
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
         tool_outputs = {}
+        got_final_answer = False
         for output in self.process_tool_calls(chat_message, memory_step):
-            tool_outputs[output.id] = output
+            yield output
+            if isinstance(output, ToolOutput):
+                tool_outputs[output.id] = output
+                if output.is_final_answer:
+                    got_final_answer = True
 
         if len(tool_outputs) == 1:
-            final_answer = list(tool_outputs.values())[0].output
+            final_output = list(tool_outputs.values())[0].output
         else:
             # ToolCallingAgent can return several final answers in parallel
-            final_answer = [tool_outputs[k].output for k in sorted(tool_outputs.keys())]
+            final_output = [tool_outputs[k].output for k in sorted(tool_outputs.keys())]
         yield ActionOutput(
-            output=final_answer,
-            is_final_answer=True,
+            output=final_output,
+            is_final_answer=got_final_answer,
         )
 
-    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep) -> Generator[ToolOutput]:
+    def process_tool_calls(
+        self, chat_message: ChatMessage, memory_step: ActionStep
+    ) -> Generator[ToolCall | ToolOutput]:
         """Process tool calls from the model output and update agent memory.
 
         Args:
@@ -1410,7 +1420,9 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step.model_output += message
             memory_step.observations += tool_output.observation + "\n"
         memory_step.model_output = memory_step.model_output.rstrip("\n")
-        memory_step.observations = memory_step.observations.rstrip("\n")
+        memory_step.observations = (
+            memory_step.observations.rstrip("\n") if memory_step.observations else memory_step.observations
+        )
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
         """Replace string values in arguments with their corresponding state values if they exist."""
@@ -1588,7 +1600,9 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput | ToolOutput]:
+    def _step_stream(
+        self, memory_step: ActionStep
+    ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1660,13 +1674,13 @@ class CodeAgent(MultiStepAgent):
             error_msg = f"Error in code parsing:\n{e}\nMake sure to provide correct code blobs."
             raise AgentParsingError(error_msg, self.logger)
 
-        memory_step.tool_calls = [
-            ToolCall(
-                name="python_interpreter",
-                arguments=code_action,
-                id=f"call_{len(self.memory.steps)}",
-            )
-        ]
+        tool_call = ToolCall(
+            name="python_interpreter",
+            arguments=code_action,
+            id=f"call_{len(self.memory.steps)}",
+        )
+        yield tool_call
+        memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
         self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
