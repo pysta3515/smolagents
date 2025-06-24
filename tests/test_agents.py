@@ -1338,7 +1338,7 @@ class TestToolCallingAgent:
 
         model = OpenAIServerModel(model_id="fakemodel")
 
-        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True, verbosity_level=100)
+        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True)
         result = agent.run("Make 2 calls to final answer: return both 'output1' and 'output2'")
         assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
         assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
@@ -1428,9 +1428,9 @@ class TestToolCallingAgent:
                 ),
             ],
         )
-        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model, verbosity_level=100)
+        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
         answer = agent.run("Fake task.")
-        assert answer == ["1 and 2", "3 and 4"] or answer == ["3 and 4", "1 and 2"]
+        assert answer == ["1 and 2", "3 and 4"]
 
     @pytest.mark.parametrize(
         "test_case",
@@ -1529,7 +1529,7 @@ class TestToolCallingAgent:
     )
     def test_process_tool_calls(self, test_case, test_tool):
         # Create a ToolCallingAgent instance with the test tool
-        agent = ToolCallingAgent(tools=[test_tool], model=MagicMock(), verbosity_level=100)
+        agent = ToolCallingAgent(tools=[test_tool], model=MagicMock())
         # Create chat message with the specified tool calls for process_tool_calls
         chat_message = ChatMessage(role=MessageRole.ASSISTANT, content="", tool_calls=test_case["tool_calls"])
         # Create a memory step for process_tool_calls
