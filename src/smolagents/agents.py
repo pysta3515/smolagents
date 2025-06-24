@@ -79,6 +79,7 @@ from .monitoring import (
 from .remote_executors import DockerExecutor, E2BExecutor
 from .tools import Tool, check_tool_arguments
 from .utils import (
+    AGENT_GRADIO_APP_TEMPLATE,
     AgentError,
     AgentExecutionError,
     AgentGenerationError,
@@ -905,44 +906,7 @@ You have been provided with these additional arguments, that you can access usin
         # Make agent.py file with Gradio UI
         agent_name = f"agent_{self.name}" if getattr(self, "name", None) else "agent"
         managed_agent_relative_path = relative_path + "." if relative_path is not None else ""
-        app_template = textwrap.dedent("""
-            import yaml
-            import os
-            from smolagents import GradioUI, {{ class_name }}, {{ agent_dict['model']['class'] }}
-
-            # Get current directory path
-            CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-            {% for tool in tools.values() -%}
-            from {{managed_agent_relative_path}}tools.{{ tool.name }} import {{ tool.__class__.__name__ }} as {{ tool.name | camelcase }}
-            {% endfor %}
-            {% for managed_agent in managed_agents.values() -%}
-            from {{managed_agent_relative_path}}managed_agents.{{ managed_agent.name }}.app import agent_{{ managed_agent.name }}
-            {% endfor %}
-
-            model = {{ agent_dict['model']['class'] }}(
-            {% for key in agent_dict['model']['data'] if key not in ['class', 'last_input_token_count', 'last_output_token_count'] -%}
-                {{ key }}={{ agent_dict['model']['data'][key]|repr }},
-            {% endfor %})
-
-            {% for tool in tools.values() -%}
-            {{ tool.name }} = {{ tool.name | camelcase }}()
-            {% endfor %}
-
-            with open(os.path.join(CURRENT_DIR, "prompts.yaml"), 'r') as stream:
-                prompt_templates = yaml.safe_load(stream)
-
-            {{ agent_name }} = {{ class_name }}(
-                model=model,
-                tools=[{% for tool_name in tools.keys() if tool_name != "final_answer" %}{{ tool_name }}{% if not loop.last %}, {% endif %}{% endfor %}],
-                managed_agents=[{% for subagent_name in managed_agents.keys() %}agent_{{ subagent_name }}{% if not loop.last %}, {% endif %}{% endfor %}],
-                {% for attribute_name, value in agent_dict.items() if attribute_name not in ["model", "tools", "prompt_templates", "authorized_imports", "managed_agents", "requirements"] -%}
-                {{ attribute_name }}={{ value|repr }},
-                {% endfor %}prompt_templates=prompt_templates
-            )
-            if __name__ == "__main__":
-                GradioUI({{ agent_name }}).launch()
-            """).strip()
+        app_template = AGENT_GRADIO_APP_TEMPLATE
         template_env = jinja2.Environment(loader=jinja2.BaseLoader(), undefined=jinja2.StrictUndefined)
         template_env.filters["repr"] = repr
         template_env.filters["camelcase"] = lambda value: "".join(word.capitalize() for word in value.split("_"))
@@ -1322,11 +1286,16 @@ class ToolCallingAgent(MultiStepAgent):
                 if output.is_final_answer:
                     got_final_answer = True
 
+                    # Manage state variables
+                    if isinstance(output.output, str) and output.output in self.state.keys():
+                        output.output = self.state[output.output]
+
         if len(tool_outputs) == 1:
             final_output = list(tool_outputs.values())[0].output
         else:
             # ToolCallingAgent can return several final answers in parallel
             final_output = [tool_outputs[k].output for k in sorted(tool_outputs.keys())]
+
         yield ActionOutput(
             output=final_output,
             is_final_answer=got_final_answer,
@@ -1353,18 +1322,14 @@ class ToolCallingAgent(MultiStepAgent):
             yield tool_call
             parallel_calls[tool_call.id] = tool_call
 
-        memory_step.tool_calls = [parallel_calls[k] for k in sorted(parallel_calls.keys())]
-
         # Helper function to process a single tool call
         def process_single_tool_call(tool_call: ToolCall) -> ToolOutput:
             tool_name = tool_call.name
-            tool_arguments = tool_call.arguments
+            tool_arguments = tool_call.arguments or {}
             self.logger.log(
                 Panel(Text(f"Calling tool: '{tool_name}' with arguments: {tool_arguments}")),
                 level=LogLevel.INFO,
             )
-            if tool_arguments is None:
-                tool_arguments = {}
             tool_call_result = self.execute_tool_call(tool_name, tool_arguments)
             tool_call_result_type = type(tool_call_result)
             if tool_call_result_type in [AgentImage, AgentAudio]:
@@ -1383,9 +1348,6 @@ class ToolCallingAgent(MultiStepAgent):
             )
             is_final_answer = tool_name == "final_answer"
 
-            # Manage state variables
-            if is_final_answer and isinstance(tool_call_result, str) and tool_call_result in self.state.keys():
-                tool_call_result = self.state[tool_call_result]
             return ToolOutput(
                 id=tool_call.id,
                 output=tool_call_result,
@@ -1413,6 +1375,7 @@ class ToolCallingAgent(MultiStepAgent):
                     outputs[tool_output.id] = tool_output
                     yield tool_output
 
+        memory_step.tool_calls = [parallel_calls[k] for k in sorted(parallel_calls.keys())]
         memory_step.model_output = memory_step.model_output or ""
         memory_step.observations = memory_step.observations or ""
         for tool_output in [outputs[k] for k in sorted(outputs.keys())]:
@@ -1716,12 +1679,12 @@ class CodeAgent(MultiStepAgent):
         observation += "Last output from code snippet:\n" + truncated_output
         memory_step.observations = observation
 
-        execution_outputs_console += [
-            Text(
-                f"{('Out - Final answer' if is_final_answer else 'Out')}: {truncated_output}",
-                style=(f"bold {YELLOW_HEX}" if is_final_answer else ""),
-            ),
-        ]
+        if not is_final_answer:
+            execution_outputs_console += [
+                Text(
+                    f"Out: {truncated_output}",
+                ),
+            ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.action_output = output
         yield ActionOutput(output=output, is_final_answer=is_final_answer)
