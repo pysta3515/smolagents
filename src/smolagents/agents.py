@@ -1312,7 +1312,6 @@ class ToolCallingAgent(MultiStepAgent):
         tool_calls = []
         observations = []
 
-        final_answer_call = None
         parallel_calls = []
         assert chat_message.tool_calls is not None
         for tool_call in chat_message.tool_calls:
@@ -1321,12 +1320,7 @@ class ToolCallingAgent(MultiStepAgent):
             tool_arguments = tool_call.function.arguments
             model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
             tool_calls.append(ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call.id))
-            # Track final_answer separately, add others to parallel processing list
-            if tool_name == "final_answer":
-                final_answer_call = (tool_name, tool_arguments)
-                break  # Stop: final answer reached, no further tool calls
-            else:
-                parallel_calls.append((tool_name, tool_arguments))
+            parallel_calls.append((tool_name, tool_arguments))
 
         # Helper function to process a single tool call
         def process_single_tool_call(call_info):
@@ -1370,42 +1364,30 @@ class ToolCallingAgent(MultiStepAgent):
                         yield ToolOutput(output=None, is_final_answer=False)
 
         # Process final_answer call if present
-        if final_answer_call:
-            tool_name, tool_arguments = final_answer_call
+        if any(tool_name == "final_answer" for tool_name, _ in parallel_calls):
+            # We have a final answer!
+            for tool_name, tool_arguments in parallel_calls:
+                if tool_name == "final_answer":
+                    answer = tool_arguments
+                    if isinstance(answer, dict) and "answer" in answer:
+                        answer = answer["answer"]
+                    if isinstance(answer, str) and answer in self.state.keys():
+                        answer = self.state[answer]
+
+            final_answer = self.execute_tool_call("final_answer", answer)
+            # TODO: Make sure this is not a problem: https://github.com/huggingface/smolagents/pull/1255#pullrequestreview-2822036066
             self.logger.log(
-                Panel(Text(f"Calling tool: '{tool_name}' with arguments: {tool_arguments}")),
+                Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
                 level=LogLevel.INFO,
             )
-            answer = (
-                tool_arguments["answer"]
-                if isinstance(tool_arguments, dict) and "answer" in tool_arguments
-                else tool_arguments
-            )
-            if isinstance(answer, str) and answer in self.state.keys():
-                # if the answer is a state variable, return the value
-                # State variables are not JSON-serializable (AgentImage, AgentAudio) so can't be passed as arguments to execute_tool_call
-                final_answer = self.state[answer]
-                self.logger.log(
-                    f"[bold {YELLOW_HEX}]Final answer:[/bold {YELLOW_HEX}] Extracting key '{answer}' from state to return value '{final_answer}'.",
-                    level=LogLevel.INFO,
-                )
-            else:
-                # Allow arbitrary keywords
-                final_answer = self.execute_tool_call("final_answer", tool_arguments)
-                self.logger.log(
-                    Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
-                    level=LogLevel.INFO,
-                )
+
             memory_step.action_output = final_answer
             yield ToolOutput(output=final_answer, is_final_answer=True)
 
         # Update memory step with all results
-        if model_outputs:
-            memory_step.model_output = "\n".join(model_outputs)
-        if tool_calls:
-            memory_step.tool_calls = tool_calls
-        if observations:
-            memory_step.observations = "\n".join(observations)
+        memory_step.model_output = "\n".join(model_outputs)
+        memory_step.tool_calls = tool_calls
+        memory_step.observations = "\n".join(observations)
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
         """Replace string values in arguments with their corresponding state values if they exist."""
