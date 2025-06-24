@@ -1365,6 +1365,7 @@ class ToolCallingAgent(MultiStepAgent):
 
         # Process final_answer call if present
         if any(tool_name == "final_answer" for tool_name, _ in parallel_calls):
+            answers = []
             # We have a final answer!
             for tool_name, tool_arguments in parallel_calls:
                 if tool_name == "final_answer":
@@ -1374,7 +1375,14 @@ class ToolCallingAgent(MultiStepAgent):
                     if isinstance(answer, str) and answer in self.state.keys():
                         answer = self.state[answer]
 
-            final_answer = self.execute_tool_call("final_answer", answer)
+                answer = self.execute_tool_call("final_answer", answer)
+                answers.append(answer)
+
+            if len(answers) == 1:
+                final_answer = answers[0]
+            else:
+                final_answer = answers
+
             # TODO: Make sure this is not a problem: https://github.com/huggingface/smolagents/pull/1255#pullrequestreview-2822036066
             self.logger.log(
                 Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
@@ -1452,12 +1460,12 @@ class ToolCallingAgent(MultiStepAgent):
             # Handle execution errors
             if is_managed_agent:
                 error_msg = (
-                    f"Error executing request to team member '{tool_name}' with arguments {json.dumps(arguments)}: {e}\n"
+                    f"Error executing request to team member '{tool_name}' with arguments {str(arguments)}: {e}\n"
                     "Please try again or request to another team member"
                 )
             else:
                 error_msg = (
-                    f"Error executing tool '{tool_name}' with arguments {json.dumps(arguments)}: {type(e).__name__}: {e}\n"
+                    f"Error executing tool '{tool_name}' with arguments {str(arguments)}: {type(e).__name__}: {e}\n"
                     "Please try again or use another tool"
                 )
             raise AgentToolExecutionError(error_msg, self.logger) from e

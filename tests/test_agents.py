@@ -1400,7 +1400,7 @@ class TestToolCallingAgent:
             }
 
             def forward(self, answer1: str, answer2: str) -> str:
-                return answer1 + "CUSTOM" + answer2
+                return answer1 + " and " + answer2
 
         model = MagicMock()
         model.generate.return_value = ChatMessage(
@@ -1413,12 +1413,19 @@ class TestToolCallingAgent:
                     function=ChatMessageToolCallFunction(
                         name="final_answer", arguments={"answer1": "1", "answer2": "2"}
                     ),
-                )
+                ),
+                ChatMessageToolCall(
+                    id="call_1",
+                    type="function",
+                    function=ChatMessageToolCallFunction(
+                        name="final_answer", arguments={"answer1": "3", "answer2": "4"}
+                    ),
+                ),
             ],
         )
-        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
+        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model, verbosity_level=100)
         answer = agent.run("Fake task.")
-        assert answer == "1CUSTOM2"
+        assert answer == ["1 and 2", "3 and 4"]
 
     @pytest.mark.parametrize(
         "test_case",
