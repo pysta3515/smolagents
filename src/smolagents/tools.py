@@ -44,12 +44,19 @@ from huggingface_hub import (
 from ._function_type_hints_utils import (
     TypeHintParsingException,
     _convert_type_hints_to_json_schema,
+    _parse_type_hint,
     get_imports,
     get_json_schema,
 )
 from .agent_types import handle_agent_input_types, handle_agent_output_types
 from .tool_validation import MethodChecker, validate_tool_attributes
-from .utils import BASE_BUILTIN_MODULES, _is_package_available, get_source, instance_to_source, is_valid_name
+from .utils import (
+    BASE_BUILTIN_MODULES,
+    _is_package_available,
+    get_source,
+    instance_to_source,
+    is_valid_name,
+)
 
 
 if TYPE_CHECKING:
@@ -1199,6 +1206,27 @@ def get_tools_definition_code(tools: dict[str, Tool]) -> str:
     )
     tool_definition_code += "\n\n".join(tool_codes)
     return tool_definition_code
+
+
+def check_tool_arguments(tool: Tool, arguments: Any) -> str | None:
+    if isinstance(arguments, dict):
+        for key, value in arguments.items():
+            if key not in tool.inputs:
+                return f"Argument {key} is not in the tool's input schema."
+
+            parsed_type = _parse_type_hint(type(value).__name__)
+
+            if parsed_type != tool.inputs[key]["type"]:
+                return f"Argument {key} has type '{parsed_type}' but should be '{tool.inputs[key]['type']}'."
+        for key in tool.inputs:
+            if key not in arguments:
+                return f"Argument {key} is required."
+        return None
+    else:
+        expected_type = list(tool.inputs.values())[0]["type"]
+        if _parse_type_hint(type(arguments).__name__) != expected_type:
+            return f"Argument has type '{type(arguments).__name__}' but should be '{expected_type}'."
+        return None
 
 
 __all__ = [

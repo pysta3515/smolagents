@@ -77,13 +77,14 @@ from .monitoring import (
     Monitor,
 )
 from .remote_executors import DockerExecutor, E2BExecutor
-from .tools import Tool
+from .tools import Tool, check_tool_arguments
 from .utils import (
     AgentError,
     AgentExecutionError,
     AgentGenerationError,
     AgentMaxStepsError,
     AgentParsingError,
+    AgentToolCallError,
     AgentToolExecutionError,
     extract_code_from_text,
     is_valid_name,
@@ -1425,6 +1426,10 @@ class ToolCallingAgent(MultiStepAgent):
         tool = available_tools[tool_name]
         arguments = self._substitute_state_variables(arguments)
         is_managed_agent = tool_name in self.managed_agents
+
+        error_msg = check_tool_arguments(tool, arguments)
+        if error_msg:
+            raise AgentToolCallError(error_msg, self.logger)
 
         try:
             # Call tool with appropriate arguments

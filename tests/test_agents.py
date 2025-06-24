@@ -39,6 +39,7 @@ from smolagents.agent_types import AgentImage, AgentText
 from smolagents.agents import (
     AgentError,
     AgentMaxStepsError,
+    AgentToolCallError,
     CodeAgent,
     MultiStepAgent,
     ToolCall,
@@ -2036,6 +2037,32 @@ def prompt_templates():
         },
         "final_answer": {"pre_messages": "custom", "post_messages": "custom"},
     }
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"arg": "bar"},
+        {None: None},
+        [1, 2, 3],
+    ],
+)
+def test_tool_calling_agents_raises_tool_call_error_being_invoked_with_wrong_arguments(arguments):
+    @tool
+    def _sample_tool(prompt: str) -> str:
+        """Tool that returns same string
+        Args:
+            prompt: The string to return
+        Returns:
+            The same string
+        """
+
+        return prompt
+
+    agent = ToolCallingAgent(model=FakeToolCallModel(), tools=[_sample_tool])
+    with pytest.raises(AgentToolCallError):
+        agent.execute_tool_call(_sample_tool.name, arguments)
 
 
 def test_tool_calling_agents_raises_agent_execution_error_when_tool_raises():
