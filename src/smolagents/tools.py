@@ -1216,7 +1216,7 @@ def check_tool_arguments(tool: Tool, arguments: Any) -> str | None:
 
             parsed_type = _get_json_schema_type(type(value))["type"]
 
-            if parsed_type != tool.inputs[key]["type"]:
+            if parsed_type != tool.inputs[key]["type"] and not tool.inputs[key]["type"] == "any":
                 return f"Argument {key} has type '{parsed_type}' but should be '{tool.inputs[key]['type']}'."
         for key in tool.inputs:
             if key not in arguments:
@@ -1224,7 +1224,7 @@ def check_tool_arguments(tool: Tool, arguments: Any) -> str | None:
         return None
     else:
         expected_type = list(tool.inputs.values())[0]["type"]
-        if _get_json_schema_type(type(arguments))["type"] != expected_type:
+        if _get_json_schema_type(type(arguments))["type"] != expected_type and not expected_type == "any":
             return f"Argument has type '{type(arguments).__name__}' but should be '{expected_type}'."
         return None
 
