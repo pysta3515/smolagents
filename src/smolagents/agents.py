@@ -122,6 +122,7 @@ class ToolOutput:
     output: Any
     is_final_answer: bool
     observation: str
+    tool_call: ToolCall
 
 
 class PlanningPromptTemplate(TypedDict):
@@ -1330,17 +1331,16 @@ class ToolCallingAgent(MultiStepAgent):
         Yields:
             `ActionOutput`: The final output of tool execution.
         """
-        model_outputs = []
-        observations = []
-        parallel_calls: list[ToolCall] = []
+        parallel_calls: dict[str, ToolCall] = {}
         assert chat_message.tool_calls is not None
         for chat_tool_call in chat_message.tool_calls:
             tool_call = ToolCall(
                 name=chat_tool_call.function.name, arguments=chat_tool_call.function.arguments, id=chat_tool_call.id
             )
-            model_outputs.append(str(f"Called Tool: '{tool_call.name}' with arguments: {tool_call.arguments}"))
             yield tool_call
-            parallel_calls.append(tool_call)
+            parallel_calls[tool_call.id] = tool_call
+
+        memory_step.tool_calls = [parallel_calls[k] for k in sorted(parallel_calls.keys())]
 
         # Helper function to process a single tool call
         def process_single_tool_call(tool_call: ToolCall) -> ToolOutput:
@@ -1374,27 +1374,40 @@ class ToolCallingAgent(MultiStepAgent):
             if is_final_answer and isinstance(tool_call_result, str) and tool_call_result in self.state.keys():
                 tool_call_result = self.state[tool_call_result]
             return ToolOutput(
-                id=tool_call.id, output=tool_call_result, is_final_answer=is_final_answer, observation=observation
+                id=tool_call.id,
+                output=tool_call_result,
+                is_final_answer=is_final_answer,
+                observation=observation,
+                tool_call=tool_call,
             )
 
         # Process tool calls in parallel
+        outputs = {}
         if len(parallel_calls) == 1:
             # If there's only one call, process it directly
-            tool_output = process_single_tool_call(parallel_calls[0])
-            observations.append(tool_output.observation)
+            tool_call = list(parallel_calls.values())[0]
+            tool_output = process_single_tool_call(tool_call)
+            outputs[tool_output.id] = tool_output
             yield tool_output
         else:
             # If multiple tool calls, process them in parallel
             with ThreadPoolExecutor(self.max_tool_threads) as executor:
-                futures = [executor.submit(process_single_tool_call, call_info) for call_info in parallel_calls]
+                futures = [
+                    executor.submit(process_single_tool_call, tool_call) for tool_call in parallel_calls.values()
+                ]
                 for future in as_completed(futures):
                     tool_output = future.result()
-                    observations.append(tool_output.output)
+                    outputs[tool_output.id] = tool_output
                     yield tool_output
 
-        memory_step.model_output = "\n".join(model_outputs)
-        memory_step.tool_calls = parallel_calls
-        memory_step.observations = "\n".join([str(observation) for observation in observations])
+        memory_step.model_output = memory_step.model_output or ""
+        memory_step.observations = memory_step.observations or ""
+        for tool_output in [outputs[k] for k in sorted(outputs.keys())]:
+            message = f"Tool call {tool_output.id}: calling '{tool_output.tool_call.name}' with arguments: {tool_output.tool_call.arguments}\n"
+            memory_step.model_output += message
+            memory_step.observations += tool_output.observation + "\n"
+        memory_step.model_output = memory_step.model_output.rstrip("\n")
+        memory_step.observations = memory_step.observations.rstrip("\n")
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
         """Replace string values in arguments with their corresponding state values if they exist."""

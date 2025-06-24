@@ -1441,7 +1441,7 @@ class TestToolCallingAgent:
                         function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "test_value"}),
                     )
                 ],
-                "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'test_value'}",
+                "expected_model_output": "Tool call call_1: calling 'test_tool' with arguments: {'input': 'test_value'}",
                 "expected_observations": "Processed: test_value",
                 "expected_final_outputs": ["Processed: test_value"],
                 "expected_error": None,
@@ -1460,7 +1460,7 @@ class TestToolCallingAgent:
                         function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "value2"}),
                     ),
                 ],
-                "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'value1'}\nCalled Tool: 'test_tool' with arguments: {'input': 'value2'}",
+                "expected_model_output": "Tool call call_1: calling 'test_tool' with arguments: {'input': 'value1'}\nTool call call_2: calling 'test_tool' with arguments: {'input': 'value2'}",
                 "expected_observations": "Processed: value1\nProcessed: value2",
                 "expected_final_outputs": ["Processed: value1", "Processed: value2"],
                 "expected_error": None,
@@ -1506,7 +1506,7 @@ class TestToolCallingAgent:
                         ),
                     )
                 ],
-                "expected_model_output": "Called Tool: 'final_answer' with arguments: {'answer': 'This is the final answer'}",
+                "expected_model_output": "Tool call call_1: calling 'final_answer' with arguments: {'answer': 'This is the final answer'}",
                 "expected_observations": "This is the final answer",
                 "expected_final_outputs": ["This is the final answer"],
                 "expected_error": None,
