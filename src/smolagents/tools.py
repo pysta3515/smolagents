@@ -44,7 +44,7 @@ from huggingface_hub import (
 from ._function_type_hints_utils import (
     TypeHintParsingException,
     _convert_type_hints_to_json_schema,
-    _parse_type_hint,
+    _get_json_schema_type,
     get_imports,
     get_json_schema,
 )
@@ -1214,7 +1214,7 @@ def check_tool_arguments(tool: Tool, arguments: Any) -> str | None:
             if key not in tool.inputs:
                 return f"Argument {key} is not in the tool's input schema."
 
-            parsed_type = _parse_type_hint(type(value).__name__)
+            parsed_type = _get_json_schema_type(type(value))["type"]
 
             if parsed_type != tool.inputs[key]["type"]:
                 return f"Argument {key} has type '{parsed_type}' but should be '{tool.inputs[key]['type']}'."
@@ -1224,7 +1224,7 @@ def check_tool_arguments(tool: Tool, arguments: Any) -> str | None:
         return None
     else:
         expected_type = list(tool.inputs.values())[0]["type"]
-        if _parse_type_hint(type(arguments).__name__) != expected_type:
+        if _get_json_schema_type(type(arguments))["type"] != expected_type:
             return f"Argument has type '{type(arguments).__name__}' but should be '{expected_type}'."
         return None
 

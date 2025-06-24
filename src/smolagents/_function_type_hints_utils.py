@@ -323,7 +323,7 @@ def _convert_type_hints_to_json_schema(func: Callable, error_on_missing_type_hin
     return schema
 
 
-def _parse_type_hint(hint: str) -> dict:
+def _parse_type_hint(hint: type) -> dict:
     origin = get_origin(hint)
     args = get_args(hint)
 
@@ -410,7 +410,7 @@ _BASE_TYPE_MAPPING = {
 }
 
 
-def _get_json_schema_type(param_type: str) -> dict[str, str]:
+def _get_json_schema_type(param_type: type) -> dict[str, str]:
     if param_type in _BASE_TYPE_MAPPING:
         return copy(_BASE_TYPE_MAPPING[param_type])
     if str(param_type) == "Image":
