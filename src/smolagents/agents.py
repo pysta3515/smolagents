@@ -518,31 +518,22 @@ You have been provided with these additional arguments, that you can access usin
             )
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
-                final_answers = []
                 for output in self._step_stream(action_step):
                     # Yield streaming deltas
-                    if not isinstance(output, (ActionOutput, ToolOutput)):
+                    if isinstance(output, ActionOutput):
+                        final_answer = output.output
+                    else:
                         yield output
 
-                    if isinstance(output, (ActionOutput, ToolOutput)) and output.is_final_answer:
-                        final_answers.append(output.output)
-                if final_answers:
-                    # Aggregate final answers
-                    if len(final_answers) == 1:
-                        final_answer = final_answers[0]
-                    else:
-                        # ToolCallingAgent can return several final answers in parallel
-                        final_answer = final_answers
+                self.logger.log(
+                    Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
+                    level=LogLevel.INFO,
+                )
 
-                    self.logger.log(
-                        Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
-                        level=LogLevel.INFO,
-                    )
-
-                    if self.final_answer_checks:
-                        self._validate_final_answer(final_answer)
-                    returned_final_answer = True
-                    action_step.is_final_answer = True
+                if self.final_answer_checks:
+                    self._validate_final_answer(final_answer)
+                returned_final_answer = True
+                action_step.is_final_answer = True
 
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
@@ -1257,7 +1248,7 @@ class ToolCallingAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ToolOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ToolOutput | ActionOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
@@ -1319,9 +1310,21 @@ class ToolCallingAgent(MultiStepAgent):
         else:
             for tool_call in chat_message.tool_calls:
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
-        yield from self.process_tool_calls(chat_message, memory_step)
+        tool_outputs = {}
+        for output in self.process_tool_calls(chat_message, memory_step):
+            tool_outputs[output.id] = output
 
-    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep) -> Generator[StreamEvent]:
+        if len(tool_outputs) == 1:
+            final_answer = list(tool_outputs.values())[0].output
+        else:
+            # ToolCallingAgent can return several final answers in parallel
+            final_answer = [tool_outputs[k].output for k in sorted(tool_outputs.keys())]
+        yield ActionOutput(
+            output=final_answer,
+            is_final_answer=True,
+        )
+
+    def process_tool_calls(self, chat_message: ChatMessage, memory_step: ActionStep) -> Generator[ToolOutput]:
         """Process tool calls from the model output and update agent memory.
 
         Args:
@@ -1585,7 +1588,7 @@ class CodeAgent(MultiStepAgent):
         )
         return system_prompt
 
-    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput]:
+    def _step_stream(self, memory_step: ActionStep) -> Generator[ChatMessageStreamDelta | ActionOutput | ToolOutput]:
         """
         Perform one step in the ReAct framework: the agent thinks, acts, and observes the result.
         Yields ChatMessageStreamDelta during the run if streaming is enabled.

@@ -1344,7 +1344,7 @@ class TestToolCallingAgent:
         assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
         assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "final_answer"
 
-        # The agent should return the first final_answer result
+        # The agent should return both final_answer calls
         assert result == ["output1", "output2"]
 
     @patch("huggingface_hub.InferenceClient")
