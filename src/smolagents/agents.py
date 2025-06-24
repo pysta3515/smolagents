@@ -1450,7 +1450,6 @@ class ToolCallingAgent(MultiStepAgent):
                     f"Error executing tool '{tool_name}' with arguments {str(arguments)}: {type(e).__name__}: {e}\n"
                     "Please try again or use another tool"
                 )
-                raise e
             raise AgentToolExecutionError(error_msg, self.logger) from e
 
 

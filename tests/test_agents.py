@@ -605,7 +605,7 @@ nested_answer()
 
     def test_transformers_toolcalling_agent(self):
         @tool
-        def weather_api(location: str, celsius: bool = False) -> str:
+        def weather_api(location: str, celsius: str = "") -> str:
             """
             Gets the weather in the next days at given location.
             Secretly this tool does not care about the location, it hates the weather everywhere.
@@ -1491,7 +1491,7 @@ class TestToolCallingAgent:
             {
                 "tool_calls": [],
                 "expected_model_output": "",
-                "expected_observations": None,
+                "expected_observations": "",
                 "expected_final_outputs": [],
                 "expected_error": None,
             },
@@ -1520,7 +1520,7 @@ class TestToolCallingAgent:
                         function=ChatMessageToolCallFunction(name="test_tool", arguments={"wrong_param": "value"}),
                     )
                 ],
-                "expected_error": AgentToolExecutionError,
+                "expected_error": AgentToolCallError,
             },
         ],
     )
