@@ -1,7 +1,7 @@
-from smolagents import CodeAgent, GradioUI, InferenceClientModel, WebSearchTool
+from smolagents import GradioUI, InferenceClientModel, ToolCallingAgent, WebSearchTool
 
 
-agent = CodeAgent(
+agent = ToolCallingAgent(
     tools=[WebSearchTool()],
     model=InferenceClientModel(model_id="meta-llama/Llama-3.3-70B-Instruct", provider="fireworks-ai"),
     verbosity_level=1,

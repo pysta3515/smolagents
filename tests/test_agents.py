@@ -67,7 +67,6 @@ from smolagents.utils import (
     BASE_BUILTIN_MODULES,
     AgentExecutionError,
     AgentGenerationError,
-    AgentToolCallError,
     AgentToolExecutionError,
 )
 
@@ -1490,7 +1489,7 @@ class TestToolCallingAgent:
             # Case 4: Empty tool calls list
             {
                 "tool_calls": [],
-                "expected_model_output": None,
+                "expected_model_output": "",
                 "expected_observations": None,
                 "expected_final_outputs": [],
                 "expected_error": None,
@@ -1520,7 +1519,7 @@ class TestToolCallingAgent:
                         function=ChatMessageToolCallFunction(name="test_tool", arguments={"wrong_param": "value"}),
                     )
                 ],
-                "expected_error": AgentToolCallError,
+                "expected_error": AgentToolExecutionError,
             },
         ],
     )

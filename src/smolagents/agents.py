@@ -1291,9 +1291,13 @@ class ToolCallingAgent(MultiStepAgent):
                     stop_sequences=["Observation:", "Calling tools:"],
                     tools_to_call_from=self.tools_and_managed_agents,
                 )
+                if chat_message.content is None and chat_message.raw is not None:
+                    log_content = str(chat_message.raw)
+                else:
+                    log_content = chat_message.content or ""
 
                 self.logger.log_markdown(
-                    content=chat_message.content if chat_message.content else str(chat_message.raw),
+                    content=log_content,
                     title="Output message of the LLM:",
                     level=LogLevel.DEBUG,
                 )
@@ -1366,7 +1370,7 @@ class ToolCallingAgent(MultiStepAgent):
             is_final_answer = tool_name == "final_answer"
 
             # Manage state variables
-            if is_final_answer and tool_call_result in self.state.keys():
+            if is_final_answer and isinstance(tool_call_result, str) and tool_call_result in self.state.keys():
                 tool_call_result = self.state[tool_call_result]
             return ToolOutput(
                 id=tool_call.id, output=tool_call_result, is_final_answer=is_final_answer, observation=observation
@@ -1441,6 +1445,7 @@ class ToolCallingAgent(MultiStepAgent):
                     f"Error executing tool '{tool_name}' with arguments {str(arguments)}: {type(e).__name__}: {e}\n"
                     "Please try again or use another tool"
                 )
+                raise e
             raise AgentToolExecutionError(error_msg, self.logger) from e
 
 
