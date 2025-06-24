@@ -118,8 +118,10 @@ class ActionOutput:
 
 @dataclass
 class ToolOutput:
+    id: str
     output: Any
     is_final_answer: bool
+    observation: str
 
 
 class PlanningPromptTemplate(TypedDict):
@@ -215,6 +217,7 @@ StreamEvent: TypeAlias = Union[
     ChatMessageStreamDelta,
     ChatMessageToolCall,
     ActionOutput,
+    ToolCall,
     ToolOutput,
     PlanningStep,
     ActionStep,
@@ -514,17 +517,32 @@ You have been provided with these additional arguments, that you can access usin
             )
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
+                final_answers = []
                 for output in self._step_stream(action_step):
                     # Yield streaming deltas
                     if not isinstance(output, (ActionOutput, ToolOutput)):
                         yield output
 
                     if isinstance(output, (ActionOutput, ToolOutput)) and output.is_final_answer:
-                        if self.final_answer_checks:
-                            self._validate_final_answer(output.output)
-                        returned_final_answer = True
-                        action_step.is_final_answer = True
-                        final_answer = output.output
+                        final_answers.append(output.output)
+                if final_answers:
+                    # Aggregate final answers
+                    if len(final_answers) == 1:
+                        final_answer = final_answers[0]
+                    else:
+                        # ToolCallingAgent can return several final answers in parallel
+                        final_answer = final_answers
+
+                    self.logger.log(
+                        Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
+                        level=LogLevel.INFO,
+                    )
+
+                    if self.final_answer_checks:
+                        self._validate_final_answer(final_answer)
+                    returned_final_answer = True
+                    action_step.is_final_answer = True
+
             except AgentGenerationError as e:
                 # Agent generation errors are not caused by a Model error but an implementation error: so we should raise them and exit.
                 raise e
@@ -1309,22 +1327,21 @@ class ToolCallingAgent(MultiStepAgent):
             `ActionOutput`: The final output of tool execution.
         """
         model_outputs = []
-        tool_calls = []
         observations = []
-
-        parallel_calls = []
+        parallel_calls: list[ToolCall] = []
         assert chat_message.tool_calls is not None
         for tool_call in chat_message.tool_calls:
-            yield tool_call
-            tool_name = tool_call.function.name
-            tool_arguments = tool_call.function.arguments
+            tool_call = ToolCall(name=tool_call.function.name, arguments=tool_call.function.arguments, id=tool_call.id)
+            tool_name = tool_call.name
+            tool_arguments = tool_call.arguments
             model_outputs.append(str(f"Called Tool: '{tool_name}' with arguments: {tool_arguments}"))
-            tool_calls.append(ToolCall(name=tool_name, arguments=tool_arguments, id=tool_call.id))
-            parallel_calls.append((tool_name, tool_arguments))
+            yield tool_call
+            parallel_calls.append(tool_call)
 
         # Helper function to process a single tool call
-        def process_single_tool_call(call_info):
-            tool_name, tool_arguments = call_info
+        def process_single_tool_call(tool_call: ToolCall) -> ToolOutput:
+            tool_name = tool_call.name
+            tool_arguments = tool_call.arguments
             self.logger.log(
                 Panel(Text(f"Calling tool: '{tool_name}' with arguments: {tool_arguments}")),
                 level=LogLevel.INFO,
@@ -1347,54 +1364,32 @@ class ToolCallingAgent(MultiStepAgent):
                 f"Observations: {observation.replace('[', '|')}",  # escape potential rich-tag-like components
                 level=LogLevel.INFO,
             )
-            return observation
+            is_final_answer = tool_name == "final_answer"
 
-        # Process tool calls in parallel
-        if parallel_calls:
-            if len(parallel_calls) == 1:
-                # If there's only one call, process it directly
-                observations.append(process_single_tool_call(parallel_calls[0]))
-                yield ToolOutput(output=None, is_final_answer=False)
-            else:
-                # If multiple tool calls, process them in parallel
-                with ThreadPoolExecutor(self.max_tool_threads) as executor:
-                    futures = [executor.submit(process_single_tool_call, call_info) for call_info in parallel_calls]
-                    for future in as_completed(futures):
-                        observations.append(future.result())
-                        yield ToolOutput(output=None, is_final_answer=False)
-
-        # Process final_answer call if present
-        if any(tool_name == "final_answer" for tool_name, _ in parallel_calls):
-            answers = []
-            # We have a final answer!
-            for tool_name, tool_arguments in parallel_calls:
-                if tool_name == "final_answer":
-                    answer = tool_arguments
-                    if isinstance(answer, dict) and "answer" in answer:
-                        answer = answer["answer"]
-                    if isinstance(answer, str) and answer in self.state.keys():
-                        answer = self.state[answer]
-
-                answer = self.execute_tool_call("final_answer", answer)
-                answers.append(answer)
-
-            if len(answers) == 1:
-                final_answer = answers[0]
-            else:
-                final_answer = answers
-
-            # TODO: Make sure this is not a problem: https://github.com/huggingface/smolagents/pull/1255#pullrequestreview-2822036066
-            self.logger.log(
-                Text(f"Final answer: {final_answer}", style=f"bold {YELLOW_HEX}"),
-                level=LogLevel.INFO,
+            # Manage state variables
+            if observation in self.state.keys():
+                observation = self.state[observation]
+            return ToolOutput(
+                id=tool_call.id, output=tool_call_result, is_final_answer=is_final_answer, observation=observation
             )
 
-            memory_step.action_output = final_answer
-            yield ToolOutput(output=final_answer, is_final_answer=True)
+        # Process tool calls in parallel
+        if len(parallel_calls) == 1:
+            # If there's only one call, process it directly
+            tool_output = process_single_tool_call(parallel_calls[0])
+            observations.append(tool_output.observation)
+            yield tool_output
+        else:
+            # If multiple tool calls, process them in parallel
+            with ThreadPoolExecutor(self.max_tool_threads) as executor:
+                futures = [executor.submit(process_single_tool_call, call_info) for call_info in parallel_calls]
+                for future in as_completed(futures):
+                    tool_output = future.result()
+                    observations.append(tool_output.output)
+                    yield tool_output
 
-        # Update memory step with all results
         memory_step.model_output = "\n".join(model_outputs)
-        memory_step.tool_calls = tool_calls
+        memory_step.tool_calls = parallel_calls
         memory_step.observations = "\n".join(observations)
 
     def _substitute_state_variables(self, arguments: dict[str, str] | str) -> dict[str, Any] | str:
@@ -1726,7 +1721,7 @@ class CodeAgent(MultiStepAgent):
         return agent_dict
 
     @classmethod
-    def from_dict(cls, agent_dict: dict[str, Any], **kwargs) -> "CodeAgent":
+    def from_dict(cls, agent_dict: dict[str, Any], **kwargs) -> "MultiStepAgent":
         """Create CodeAgent from a dictionary representation.
 
         Args:

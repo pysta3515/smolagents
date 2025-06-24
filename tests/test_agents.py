@@ -1342,7 +1342,7 @@ class TestToolCallingAgent:
         assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "final_answer"
 
         # The agent should return the first final_answer result
-        assert result == "output1"
+        assert result == ["output1", "output2"]
 
     @patch("huggingface_hub.InferenceClient")
     def test_toolcalling_agent_api_misformatted_output(self, mock_inference_client):
@@ -1443,7 +1443,7 @@ class TestToolCallingAgent:
                 ],
                 "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'test_value'}",
                 "expected_observations": "Processed: test_value",
-                "expected_final_outputs": [None],
+                "expected_final_outputs": ["Processed: test_value"],
                 "expected_error": None,
             },
             # Case 1: Multiple tool calls
@@ -1462,7 +1462,7 @@ class TestToolCallingAgent:
                 ],
                 "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'value1'}\nCalled Tool: 'test_tool' with arguments: {'input': 'value2'}",
                 "expected_observations": "Processed: value1\nProcessed: value2",
-                "expected_final_outputs": [None, None],
+                "expected_final_outputs": ["Processed: value1", "Processed: value2"],
                 "expected_error": None,
             },
             # Case 2: Invalid tool name
@@ -1507,7 +1507,7 @@ class TestToolCallingAgent:
                     )
                 ],
                 "expected_model_output": "Called Tool: 'final_answer' with arguments: {'answer': 'This is the final answer'}",
-                "expected_observations": None,
+                "expected_observations": "This is the final answer",
                 "expected_final_outputs": ["This is the final answer"],
                 "expected_error": None,
             },
@@ -1526,7 +1526,7 @@ class TestToolCallingAgent:
     )
     def test_process_tool_calls(self, test_case, test_tool):
         # Create a ToolCallingAgent instance with the test tool
-        agent = ToolCallingAgent(tools=[test_tool], model=MagicMock())
+        agent = ToolCallingAgent(tools=[test_tool], model=MagicMock(), verbosity_level=100)
         # Create chat message with the specified tool calls for process_tool_calls
         chat_message = ChatMessage(role=MessageRole.ASSISTANT, content="", tool_calls=test_case["tool_calls"])
         # Create a memory step for process_tool_calls
