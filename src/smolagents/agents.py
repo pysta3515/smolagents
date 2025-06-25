@@ -1264,7 +1264,7 @@ class ToolCallingAgent(MultiStepAgent):
 
             # Record model output
             memory_step.model_output_message = chat_message
-            memory_step.model_output = str(chat_message.content)
+            memory_step.model_output = chat_message.content
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
@@ -1278,26 +1278,25 @@ class ToolCallingAgent(MultiStepAgent):
             for tool_call in chat_message.tool_calls:
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
         tool_outputs = {}
-        got_final_answer = False
+        final_answer, got_final_answer = None, False
         for output in self.process_tool_calls(chat_message, memory_step):
             yield output
             if isinstance(output, ToolOutput):
                 tool_outputs[output.id] = output
                 if output.is_final_answer:
+                    if got_final_answer:
+                        raise AgentToolExecutionError(
+                            "You returned multiple final answers. Please return only one single final answer!",
+                            self.logger,
+                        )
+                    final_answer = output.output
                     got_final_answer = True
 
                     # Manage state variables
-                    if isinstance(output.output, str) and output.output in self.state.keys():
-                        output.output = self.state[output.output]
-
-        if len(tool_outputs) == 1:
-            final_output = list(tool_outputs.values())[0].output
-        else:
-            # ToolCallingAgent can return several final answers in parallel
-            final_output = [tool_outputs[k].output for k in sorted(tool_outputs.keys())]
-
+                    if isinstance(final_answer, str) and final_answer in self.state.keys():
+                        final_answer = self.state[final_answer]
         yield ActionOutput(
-            output=final_output,
+            output=final_answer,
             is_final_answer=got_final_answer,
         )
 
