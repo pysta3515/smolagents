@@ -1277,12 +1277,10 @@ class ToolCallingAgent(MultiStepAgent):
         else:
             for tool_call in chat_message.tool_calls:
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
-        tool_outputs = {}
         final_answer, got_final_answer = None, False
         for output in self.process_tool_calls(chat_message, memory_step):
             yield output
             if isinstance(output, ToolOutput):
-                tool_outputs[output.id] = output
                 if output.is_final_answer:
                     if got_final_answer:
                         raise AgentToolExecutionError(
@@ -1310,7 +1308,7 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step (`ActionStep)`: Memory ActionStep to update with results.
 
         Yields:
-            `ActionOutput`: The final output of tool execution.
+            `ToolCall | ToolOutput`: The tool call or tool output.
         """
         parallel_calls: dict[str, ToolCall] = {}
         assert chat_message.tool_calls is not None

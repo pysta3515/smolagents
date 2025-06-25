@@ -1261,7 +1261,7 @@ class TestToolCallingAgent:
         assert agent.memory.steps[1].observations == "The weather in Paris on date:today is sunny."
 
     @patch("openai.OpenAI")
-    def test_toolcalling_agent_stream_outputs_multiple_tool_calls(self, mock_openai_client):
+    def test_toolcalling_agent_stream_outputs_multiple_tool_calls(self, mock_openai_client, test_tool):
         """Test that ToolCallingAgent with stream_outputs=True returns the first final_answer when multiple are called."""
         mock_client = mock_openai_client.return_value
         from smolagents import OpenAIServerModel
@@ -1299,16 +1299,16 @@ class TestToolCallingAgent:
                     ChoiceDeltaToolCall(
                         index=1,
                         id="call_2",
-                        function=ChoiceDeltaToolCallFunction(name="final_answer"),
+                        function=ChoiceDeltaToolCallFunction(name="test_tool"),
                         type="function",
                     )
                 ]
             ),
             ChoiceDelta(
-                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='{"an'))]
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='{"in'))]
             ),
             ChoiceDelta(
-                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='swer"'))]
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='put"'))]
             ),
             ChoiceDelta(
                 tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments=': "out'))]
@@ -1339,14 +1339,14 @@ class TestToolCallingAgent:
 
         model = OpenAIServerModel(model_id="fakemodel")
 
-        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True)
+        agent = ToolCallingAgent(model=model, tools=[test_tool], max_steps=1, stream_outputs=True)
         result = agent.run("Make 2 calls to final answer: return both 'output1' and 'output2'")
         assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
         assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
-        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "final_answer"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool"
 
-        # The agent should return both final_answer calls
-        assert result == ["output1", "output2"]
+        # The agent should return the final answer call
+        assert result == "output1"
 
     @patch("huggingface_hub.InferenceClient")
     def test_toolcalling_agent_api_misformatted_output(self, mock_inference_client):
@@ -1398,7 +1398,7 @@ class TestToolCallingAgent:
         answer = agent.run("Fake task.")
         assert answer == "2CUSTOM"
 
-    def test_custom_final_answer_with_custom_inputs(self):
+    def test_custom_final_answer_with_custom_inputs(self, test_tool):
         class CustomFinalAnswerToolWithCustomInputs(FinalAnswerTool):
             inputs = {
                 "answer1": {"type": "string", "description": "First part of the answer."},
@@ -1423,15 +1423,15 @@ class TestToolCallingAgent:
                 ChatMessageToolCall(
                     id="call_1",
                     type="function",
-                    function=ChatMessageToolCallFunction(
-                        name="final_answer", arguments={"answer1": "3", "answer2": "4"}
-                    ),
+                    function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "3"}),
                 ),
             ],
         )
-        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
+        agent = ToolCallingAgent(tools=[test_tool, CustomFinalAnswerToolWithCustomInputs()], model=model)
         answer = agent.run("Fake task.")
-        assert answer == ["1 and 2", "3 and 4"]
+        assert answer == "1 and 2"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool"
 
     @pytest.mark.parametrize(
         "test_case",
