@@ -77,7 +77,7 @@ from .monitoring import (
     Monitor,
 )
 from .remote_executors import DockerExecutor, E2BExecutor
-from .tools import Tool, check_tool_arguments
+from .tools import Tool, validate_tool_arguments
 from .utils import (
     AGENT_GRADIO_APP_TEMPLATE,
     AgentError,
@@ -281,15 +281,15 @@ class MultiStepAgent(ABC):
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
         if prompt_templates is not None:
             missing_keys = set(EMPTY_PROMPT_TEMPLATES.keys()) - set(prompt_templates.keys())
-            assert not missing_keys, (
-                f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
-            )
+            assert (
+                not missing_keys
+            ), f"Some prompt templates are missing from your custom `prompt_templates`: {missing_keys}"
             for key, value in EMPTY_PROMPT_TEMPLATES.items():
                 if isinstance(value, dict):
                     for subkey in value.keys():
-                        assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
-                        )
+                        assert (
+                            key in prompt_templates.keys() and (subkey in prompt_templates[key].keys())
+                        ), f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
 
         self.max_steps = max_steps
         self.step_number = 0
@@ -343,9 +343,9 @@ class MultiStepAgent(ABC):
         """Setup managed agents with proper logging."""
         self.managed_agents = {}
         if managed_agents:
-            assert all(agent.name and agent.description for agent in managed_agents), (
-                "All managed agents need both a name and a description!"
-            )
+            assert all(
+                agent.name and agent.description for agent in managed_agents
+            ), "All managed agents need both a name and a description!"
             self.managed_agents = {agent.name: agent for agent in managed_agents}
             # Ensure managed agents can be called as tools by the model: set their inputs and output_type
             for agent in self.managed_agents.values():
@@ -1418,7 +1418,7 @@ class ToolCallingAgent(MultiStepAgent):
         arguments = self._substitute_state_variables(arguments)
         is_managed_agent = tool_name in self.managed_agents
 
-        error_msg = check_tool_arguments(tool, arguments)
+        error_msg = validate_tool_arguments(tool, arguments)
         if error_msg:
             raise AgentToolCallError(error_msg, self.logger)
 
