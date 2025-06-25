@@ -405,6 +405,8 @@ _BASE_TYPE_MAPPING = {
     float: {"type": "number"},
     str: {"type": "string"},
     bool: {"type": "boolean"},
+    list: {"type": "array"},
+    dict: {"type": "object"},
     Any: {"type": "any"},
     types.NoneType: {"type": "null"},
 }
