@@ -584,7 +584,7 @@ You have been provided with these additional arguments, that you can access usin
                             "type": "text",
                             "text": populate_template(
                                 self.prompt_templates["planning"]["initial_plan"],
-                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
+                                variables={"task": task},
                             ),
                         }
                     ],
@@ -641,8 +641,6 @@ You have been provided with these additional arguments, that you can access usin
                             self.prompt_templates["planning"]["update_plan_post_messages"],
                             variables={
                                 "task": task,
-                                "tools": self.tools,
-                                "managed_agents": self.managed_agents,
                                 "remaining_steps": (self.max_steps - step),
                             },
                         ),
@@ -1502,6 +1500,7 @@ class CodeAgent(MultiStepAgent):
             <Deprecated version="1.17.0">
             Parameter `grammar` is deprecated and will be removed in version 1.20.
             </Deprecated>
+        code_block_tags (`tuple[str, str]` | `str`, *optional*): Opening and closing tags for code blocks (regex strings). Pass a custom tuple, or pass 'markdown' to use ("```(?:python|py)", "\\n```"), leave empty to use ("<code>", "</code>").
         **kwargs: Additional keyword arguments.
     """
 
@@ -1518,6 +1517,7 @@ class CodeAgent(MultiStepAgent):
         stream_outputs: bool = False,
         use_structured_outputs_internally: bool = False,
         grammar: dict[str, str] | None = None,
+        code_block_tags: str | tuple[str, str] | None = None,
         **kwargs,
     ):
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
@@ -1534,6 +1534,17 @@ class CodeAgent(MultiStepAgent):
             )
         if grammar and use_structured_outputs_internally:
             raise ValueError("You cannot use 'grammar' and 'use_structured_outputs_internally' at the same time.")
+
+        if isinstance(code_block_tags, str) and not code_block_tags == "markdown":
+            raise ValueError("Only 'markdown' is supported for a string argument to `code_block_tags`.")
+        self.code_block_tags = (
+            code_block_tags
+            if isinstance(code_block_tags, tuple)
+            else ("```python", "```")
+            if code_block_tags == "markdown"
+            else ("<code>", "</code>")
+        )
+
         super().__init__(
             tools=tools,
             model=model,
@@ -1596,6 +1607,8 @@ class CodeAgent(MultiStepAgent):
                     else str(self.authorized_imports)
                 ),
                 "custom_instructions": self.instructions,
+                "code_block_opening_tag": self.code_block_tags[0],
+                "code_block_closing_tag": self.code_block_tags[1],
             },
         )
         return system_prompt
@@ -1611,6 +1624,10 @@ class CodeAgent(MultiStepAgent):
         input_messages = memory_messages.copy()
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
+        stop_sequences = ["Observation:", "Calling tools:"]
+        if self.code_block_tags[1] not in self.code_block_tags[0]:
+            # If the closing tag is contained in the opening tag, adding it as a stop sequence would cut short any code generation
+            stop_sequences.append(self.code_block_tags[1])
         try:
             additional_args: dict[str, Any] = {}
             if self.grammar:
@@ -1620,7 +1637,7 @@ class CodeAgent(MultiStepAgent):
             if self.stream_outputs:
                 output_stream = self.model.generate_stream(
                     input_messages,
-                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    stop_sequences=stop_sequences,
                     **additional_args,
                 )
                 chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
@@ -1637,7 +1654,7 @@ class CodeAgent(MultiStepAgent):
             else:
                 chat_message: ChatMessage = self.model.generate(
                     input_messages,
-                    stop_sequences=["<end_code>", "Observation:", "Calling tools:"],
+                    stop_sequences=stop_sequences,
                     **additional_args,
                 )
                 memory_step.model_output_message = chat_message
@@ -1648,10 +1665,10 @@ class CodeAgent(MultiStepAgent):
                     level=LogLevel.DEBUG,
                 )
 
-            # This adds <end_code> sequence to the history.
-            # This will nudge ulterior LLM calls to finish with <end_code>, thus efficiently stopping generation.
-            if output_text and output_text.strip().endswith("```"):
-                output_text += "<end_code>"
+            # This adds the end code sequence to the history.
+            # This will nudge ulterior LLM calls to finish with this end code sequence, thus efficiently stopping generation.
+            if output_text and not output_text.strip().endswith(self.code_block_tags[1]):
+                output_text += self.code_block_tags[1]
                 memory_step.model_output_message.content = output_text
 
             memory_step.token_usage = chat_message.token_usage
@@ -1663,9 +1680,9 @@ class CodeAgent(MultiStepAgent):
         try:
             if self._use_structured_outputs_internally:
                 code_action = json.loads(output_text)["code"]
-                code_action = extract_code_from_text(code_action) or code_action
+                code_action = extract_code_from_text(code_action, self.code_block_tags) or code_action
             else:
-                code_action = parse_code_blobs(output_text)
+                code_action = parse_code_blobs(output_text, self.code_block_tags)
             code_action = fix_final_answer_code(code_action)
             memory_step.code_action = code_action
         except Exception as e:
@@ -1754,6 +1771,7 @@ class CodeAgent(MultiStepAgent):
             "executor_type": agent_dict.get("executor_type"),
             "executor_kwargs": agent_dict.get("executor_kwargs"),
             "max_print_outputs_length": agent_dict.get("max_print_outputs_length"),
+            "code_block_tags": agent_dict.get("code_block_tags"),
         }
         # Filter out None values
         code_agent_kwargs = {k: v for k, v in code_agent_kwargs.items() if v is not None}
