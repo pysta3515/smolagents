@@ -584,7 +584,7 @@ You have been provided with these additional arguments, that you can access usin
                             "type": "text",
                             "text": populate_template(
                                 self.prompt_templates["planning"]["initial_plan"],
-                                variables={"task": task},
+                                variables={"task": task, "tools": self.tools, "managed_agents": self.managed_agents},
                             ),
                         }
                     ],
@@ -641,6 +641,8 @@ You have been provided with these additional arguments, that you can access usin
                             self.prompt_templates["planning"]["update_plan_post_messages"],
                             variables={
                                 "task": task,
+                                "tools": self.tools,
+                                "managed_agents": self.managed_agents,
                                 "remaining_steps": (self.max_steps - step),
                             },
                         ),

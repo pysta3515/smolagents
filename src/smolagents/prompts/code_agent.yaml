@@ -204,9 +204,36 @@ planning:
     Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
     After writing the final step of the plan, write the '<end_plan>' tag and stop there.
 
-    Remember that you can leverage the tools listed above.
+    You can leverage these tools, behaving like regular python functions:
+    ```python
+    {%- for tool in tools.values() %}
+    def {{ tool.name }}({% for arg_name, arg_info in tool.inputs.items() %}{{ arg_name }}: {{ arg_info.type }}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{tool.output_type}}:
+        """{{ tool.description }}
+
+        Args:
+        {%- for arg_name, arg_info in tool.inputs.items() %}
+            {{ arg_name }}: {{ arg_info.description }}
+        {%- endfor %}
+        """
+    {% endfor %}
+    ```
+
     {%- if managed_agents and managed_agents.values() | list %}
-    You can also give tasks to the team members described above.
+    You can also give tasks to team members.
+    Calling a team member works similarly to calling a tool: provide the task description as the 'task' argument. Since this team member is a real human, be as detailed and verbose as necessary in your task description.
+    You can also include any relevant variables or context using the 'additional_args' argument.
+    Here is a list of the team members that you can call:
+    ```python
+    {%- for agent in managed_agents.values() %}
+    def {{ agent.name }}(task: str, additional_args: dict[str, Any]) -> str:
+        """{{ agent.description }}
+
+        Args:
+            task: Long detailed description of the task.
+            additional_args: Dictionary of extra inputs to pass to the managed agent, e.g. images, dataframes, or any other contextual data it may need.
+        """
+    {% endfor %}
+    ```
     {%- endif %}
 
     ---
@@ -245,9 +272,35 @@ planning:
     Do not skip steps, do not add any superfluous steps. Only write the high-level plan, DO NOT DETAIL INDIVIDUAL TOOL CALLS.
     After writing the final step of the plan, write the '<end_plan>' tag and stop there.
 
-    Remember that you can leverage the tools listed above.
+    You can leverage these tools, behaving like regular python functions:
+    ```python
+    {%- for tool in tools.values() %}
+    def {{ tool.name }}({% for arg_name, arg_info in tool.inputs.items() %}{{ arg_name }}: {{ arg_info.type }}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{tool.output_type}}:
+        """{{ tool.description }}
+
+        Args:
+        {%- for arg_name, arg_info in tool.inputs.items() %}
+            {{ arg_name }}: {{ arg_info.description }}
+        {%- endfor %}"""
+    {% endfor %}
+    ```
+
     {%- if managed_agents and managed_agents.values() | list %}
-    You can also give tasks to the team members described above.
+    You can also give tasks to team members.
+    Calling a team member works similarly to calling a tool: provide the task description as the 'task' argument. Since this team member is a real human, be as detailed and verbose as necessary in your task description.
+    You can also include any relevant variables or context using the 'additional_args' argument.
+    Here is a list of the team members that you can call:
+    ```python
+    {%- for agent in managed_agents.values() %}
+    def {{ agent.name }}(task: str, additional_args: dict[str, Any]) -> str:
+        """{{ agent.description }}
+
+        Args:
+            task: Long detailed description of the task.
+            additional_args: Dictionary of extra inputs to pass to the managed agent, e.g. images, dataframes, or any other contextual data it may need.
+        """
+    {% endfor %}
+    ```
     {%- endif %}
 
     Now write your updated facts survey below, then your new plan.
