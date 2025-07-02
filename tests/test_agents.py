@@ -228,6 +228,31 @@ final_answer(7.2904)
             )
 
 
+class FakeCodeModelImageGeneration(Model):
+    def generate(self, messages, stop_sequences=None):
+        prompt = str(messages)
+        if "special_marker" not in prompt:
+            return ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content="""
+Thought: I should generate an image. special_marker
+<code>
+image = image_generation_tool()
+</code>
+""",
+            )
+        else:  # We're at step 2
+            return ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content="""
+Thought: I can now answer the initial question
+<code>
+final_answer(image)
+</code>
+""",
+            )
+
+
 class FakeCodeModelPlanning(Model):
     def generate(self, messages, stop_sequences=None):
         prompt = str(messages)
@@ -709,9 +734,9 @@ nested_answer()
         input_messages = first_planning_step.model_input_messages
 
         # Check message structure and content
-        assert len(input_messages) == 4, (
-            "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
-        )
+        assert (
+            len(input_messages) == 4
+        ), "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
 
         # Verify system message contains current task
         system_message = input_messages[0]
@@ -720,9 +745,9 @@ nested_answer()
 
         # Verify memory message contains previous task
         memory_message = input_messages[1]
-        assert previous_task in memory_message.content[0]["text"], (
-            f"Memory message should contain previous task: '{previous_task}'"
-        )
+        assert (
+            previous_task in memory_message.content[0]["text"]
+        ), f"Memory message should contain previous task: '{previous_task}'"
 
         # Verify task message contains current task
         task_message = input_messages[2]
@@ -1702,6 +1727,20 @@ class TestCodeAgent:
                 "<summary_of_work>\n\nTest summary\n---\n</summary_of_work>"
             )
         assert result == expected_summary
+
+    def test_code_agent_image_output(self):
+        from PIL import Image
+
+        from smolagents import tool
+
+        @tool
+        def image_generation_tool():
+            """Generate an image"""
+            return Image.new("RGB", (100, 100), color="red")
+
+        agent = CodeAgent(tools=[image_generation_tool], model=FakeCodeModelImageGeneration(), verbosity_level=1)
+        output = agent.run("Make me an image from the latest trend on google trends.")
+        assert isinstance(output, Image.Image)
 
     def test_errors_logging(self):
         class FakeCodeModel(Model):

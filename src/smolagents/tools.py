@@ -48,7 +48,7 @@ from ._function_type_hints_utils import (
     get_imports,
     get_json_schema,
 )
-from .agent_types import handle_agent_input_types, handle_agent_output_types
+from .agent_types import AgentAudio, AgentImage, handle_agent_input_types, handle_agent_output_types
 from .tool_validation import MethodChecker, validate_tool_attributes
 from .utils import (
     BASE_BUILTIN_MODULES,
@@ -152,9 +152,9 @@ class Tool:
         # Validate inputs
         for input_name, input_content in self.inputs.items():
             assert isinstance(input_content, dict), f"Input '{input_name}' should be a dictionary."
-            assert "type" in input_content and "description" in input_content, (
-                f"Input '{input_name}' should have keys 'type' and 'description', has only {list(input_content.keys())}."
-            )
+            assert (
+                "type" in input_content and "description" in input_content
+            ), f"Input '{input_name}' should have keys 'type' and 'description', has only {list(input_content.keys())}."
             # Get input_types as a list, whether from a string or list
             if isinstance(input_content["type"], str):
                 input_types = [input_content["type"]]
@@ -194,17 +194,17 @@ class Tool:
                 "properties"
             ]  # This function will not raise an error on missing docstrings, contrary to get_json_schema
             for key, value in self.inputs.items():
-                assert key in json_schema, (
-                    f"Input '{key}' should be present in function signature, found only {json_schema.keys()}"
-                )
+                assert (
+                    key in json_schema
+                ), f"Input '{key}' should be present in function signature, found only {json_schema.keys()}"
                 if "nullable" in value:
-                    assert "nullable" in json_schema[key], (
-                        f"Nullable argument '{key}' in inputs should have key 'nullable' set to True in function signature."
-                    )
+                    assert (
+                        "nullable" in json_schema[key]
+                    ), f"Nullable argument '{key}' in inputs should have key 'nullable' set to True in function signature."
                 if key in json_schema and "nullable" in json_schema[key]:
-                    assert "nullable" in value, (
-                        f"Nullable argument '{key}' in function signature should have key 'nullable' set to True in inputs."
-                    )
+                    assert (
+                        "nullable" in value
+                    ), f"Nullable argument '{key}' in function signature should have key 'nullable' set to True in inputs."
 
     def forward(self, *args, **kwargs):
         return NotImplementedError("Write this method in your subclass of `Tool`.")
@@ -596,17 +596,16 @@ class Tool:
                     space_description_api = space_description[api_name]
                 except KeyError:
                     raise KeyError(f"Could not find specified {api_name=} among available api names.")
-
                 self.inputs = {}
                 for parameter in space_description_api["parameters"]:
-                    if not parameter["parameter_has_default"]:
-                        parameter_type = parameter["type"]["type"]
-                        if parameter_type == "object":
-                            parameter_type = "any"
-                        self.inputs[parameter["parameter_name"]] = {
-                            "type": parameter_type,
-                            "description": parameter["python_type"]["description"],
-                        }
+                    parameter_type = parameter["type"]["type"]
+                    if parameter_type == "object":
+                        parameter_type = "any"
+                    self.inputs[parameter["parameter_name"]] = {
+                        "type": parameter_type,
+                        "description": parameter["python_type"]["description"],
+                        "nullable": parameter["parameter_has_default"],
+                    }
                 output_component = space_description_api["returns"][0]["component"]
                 if output_component == "Image":
                     self.output_type = "image"
@@ -614,6 +613,7 @@ class Tool:
                     self.output_type = "audio"
                 else:
                     self.output_type = "any"
+                print(self.inputs, self.output_type)
                 self.is_initialized = True
 
             def sanitize_argument_for_prediction(self, arg):
@@ -642,9 +642,18 @@ class Tool:
 
                 output = self.client.predict(*args, api_name=self.api_name, **kwargs)
                 if isinstance(output, tuple) or isinstance(output, list):
-                    return output[
+                    if isinstance(output[1], str):
+                        raise ValueError("The space returned this message: " + output[1])
+                    output = output[
                         0
                     ]  # Sometime the space also returns the generation seed, in which case the result is at index 0
+                IMAGE_EXTENTIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
+                AUDIO_EXTENTIONS = [".mp3", ".wav", ".ogg", ".m4a", ".flac"]
+                print("OUTPUT", output)
+                if isinstance(output, str) and any([output.endswith(ext) for ext in IMAGE_EXTENTIONS]):
+                    output = AgentImage(output)
+                elif isinstance(output, str) and any([output.endswith(ext) for ext in AUDIO_EXTENTIONS]):
+                    output = AgentAudio(output)
                 return output
 
         return SpaceToolWrapper(
@@ -972,7 +981,12 @@ def tool(tool_function: Callable) -> Tool:
     """
     tool_json_schema = get_json_schema(tool_function)["function"]
     if "return" not in tool_json_schema:
-        raise TypeHintParsingException("Tool return type not found: make sure your function has a return type hint!")
+        if len(tool_json_schema["parameters"]["properties"]) == 0:
+            tool_json_schema["return"] = {"type": "null"}
+        else:
+            raise TypeHintParsingException(
+                "Tool return type not found: make sure your function has a return type hint!"
+            )
 
     class SimpleTool(Tool):
         def __init__(self):
