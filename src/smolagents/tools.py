@@ -615,7 +615,6 @@ class Tool:
                     self.output_type = "audio"
                 else:
                     self.output_type = "any"
-                print(self.inputs, self.output_type)
                 self.is_initialized = True
 
             def sanitize_argument_for_prediction(self, arg):
@@ -1245,11 +1244,16 @@ def validate_tool_arguments(tool: Tool, arguments: Any) -> str | None:
 
             parsed_type = _get_json_schema_type(type(value))["type"]
 
-            if parsed_type != tool.inputs[key]["type"] and not tool.inputs[key]["type"] == "any":
-                return f"Argument {key} has type '{parsed_type}' but should be '{tool.inputs[key]['type']}'."
+            can_be_any = tool.inputs[key]["type"] == "any"
+            can_be_nullable = "nullable" in tool.inputs[key] and tool.inputs[key]["nullable"]
+
+            if parsed_type != tool.inputs[key]["type"]:
+                if not can_be_any and not (can_be_nullable and parsed_type == "null"):
+                    return f"Argument {key} has type '{parsed_type}' but should be '{tool.inputs[key]['type']}'."
         for key in tool.inputs:
-            if key not in arguments:
-                return f"Argument {key} is required."
+            if not ("nullable" in tool.inputs[key] and tool.inputs[key]["nullable"]):
+                if key not in arguments:
+                    return f"Argument {key} is required."
         return None
     else:
         expected_type = list(tool.inputs.values())[0]["type"]

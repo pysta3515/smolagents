@@ -742,29 +742,33 @@ def test_launch_gradio_demo_does_not_raise(tool_fixture_name, request):
 
 
 @pytest.mark.parametrize(
-    "tool_input_type, expected_input, expects_error",
+    "tool_input_type, expected_input_a, expected_input_b, expects_error",
     [
-        (bool, True, False),
-        (str, "b", False),
-        (int, 1, False),
-        (list, ["a", "b"], False),
-        (list[str], ["a", "b"], False),
-        (dict[str, str], {"a": "b"}, False),
-        (dict[str, str], "b", True),
-        (bool, "b", True),
+        (bool, True, None, False),
+        (bool, True, True, False),
+        (str, "b", None, False),
+        (int, 1, None, False),
+        (list, ["a", "b"], None, False),
+        (list[str], ["a", "b"], None, False),
+        (dict[str, str], {"a": "b"}, None, False),
+        (dict[str, str], "b", None, True),
+        (bool, "b", None, True),
     ],
 )
-def test_validate_tool_arguments(tool_input_type, expected_input, expects_error):
+def test_validate_tool_arguments(tool_input_type, expected_input_a, expected_input_b, expects_error):
     @tool
-    def test_tool(argument_a: tool_input_type) -> str:
+    def test_tool(argument_a: tool_input_type, argument_b: tool_input_type | None = None) -> str:
         """Fake tool
 
         Args:
             argument_a: The input
+            argument_b: The optional input
         """
+        if argument_b is not None:
+            return argument_a and argument_b
         return argument_a
 
-    error = validate_tool_arguments(test_tool, {"argument_a": expected_input})
+    error = validate_tool_arguments(test_tool, {"argument_a": expected_input_a, "argument_b": expected_input_b})
     if expects_error:
         assert error is not None
     else:
