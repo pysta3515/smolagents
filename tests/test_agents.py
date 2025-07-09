@@ -737,9 +737,9 @@ nested_answer()
         input_messages = first_planning_step.model_input_messages
 
         # Check message structure and content
-        assert (
-            len(input_messages) == 4
-        ), "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
+        assert len(input_messages) == 4, (
+            "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
+        )
 
         # Verify system message contains current task
         system_message = input_messages[0]
@@ -748,9 +748,9 @@ nested_answer()
 
         # Verify memory message contains previous task
         memory_message = input_messages[1]
-        assert (
-            previous_task in memory_message.content[0]["text"]
-        ), f"Memory message should contain previous task: '{previous_task}'"
+        assert previous_task in memory_message.content[0]["text"], (
+            f"Memory message should contain previous task: '{previous_task}'"
+        )
 
         # Verify task message contains current task
         task_message = input_messages[2]
