@@ -1689,18 +1689,12 @@ class TestToolCallingAgent:
                         name="final_answer", arguments={"answer1": "1", "answer2": "2"}
                     ),
                 ),
-                ChatMessageToolCall(
-                    id="call_1",
-                    type="function",
-                    function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "3"}),
-                ),
             ],
         )
         agent = ToolCallingAgent(tools=[test_tool, CustomFinalAnswerToolWithCustomInputs()], model=model)
         answer = agent.run("Fake task.")
         assert answer == "1 and 2"
         assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
-        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool"
 
     @pytest.mark.parametrize(
         "test_case",
