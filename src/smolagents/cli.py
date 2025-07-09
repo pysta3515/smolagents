@@ -24,7 +24,17 @@ from rich.prompt import Confirm, Prompt
 from rich.rule import Rule
 from rich.table import Table
 
-from smolagents import CodeAgent, InferenceClientModel, LiteLLMModel, Model, OpenAIServerModel, Tool, TransformersModel
+from smolagents import (
+    CodeAgent,
+    InferenceClientModel,
+    LiteLLMModel,
+    Model,
+    MultiStepAgent,
+    OpenAIServerModel,
+    Tool,
+    ToolCallingAgent,
+    TransformersModel,
+)
 from smolagents.default_tools import TOOL_MAPPING
 
 
@@ -47,6 +57,12 @@ def parse_arguments():
         type=str,
         default="InferenceClientModel",
         help="The model type to use (e.g., InferenceClientModel, OpenAIServerModel, LiteLLMModel, TransformersModel)",
+    )
+    parser.add_argument(
+        "--action-type",
+        type=str,
+        default="code",
+        help="The action type to use (e.g., code, tool_calling)",
     )
     parser.add_argument(
         "--model-id",
@@ -101,10 +117,17 @@ def interactive_mode():
         )
     )
 
-    console.print("\n[bold yellow]Welcome to SmolaGents![/] Let's set up your agent step by step.\n")
+    console.print("\n[bold yellow]Welcome to smolagents![/] Let's set up your agent step by step.\n")
 
     # Get user input step by step
     console.print(Rule("[bold yellow]⚙️  Configuration", style="bold yellow"))
+
+    # Get agent action type
+    action_type = Prompt.ask(
+        "[bold white]What action type would you like to use? 'code' or 'tool_calling'?[/]",
+        default="code",
+        choices=["code", "tool_calling"],
+    )
 
     # Show available tools
     tools_table = Table(title="[bold yellow]🛠️  Available Tools", show_header=True, header_style="bold yellow")
@@ -144,6 +167,7 @@ def interactive_mode():
     api_base = None
     api_key = None
     imports = []
+    action_type = "code"
 
     if Confirm.ask("\n[bold white]Configure advanced options?[/]", default=False):
         if model_type in ["InferenceClientModel", "OpenAIServerModel", "LiteLLMModel"]:
@@ -160,7 +184,7 @@ def interactive_mode():
         "[bold white]Now the final step; what task would you like the agent to perform?[/]", default=leopard_prompt
     )
 
-    return prompt, tools, model_type, model_id, provider, api_base, api_key, imports
+    return prompt, tools, model_type, model_id, provider, api_base, api_key, imports, action_type
 
 
 def load_model(
@@ -204,6 +228,7 @@ def run_smolagent(
     api_key: str | None = None,
     imports: list[str] | None = None,
     provider: str | None = None,
+    action_type: str = "code",
 ) -> None:
     load_dotenv()
 
@@ -223,7 +248,14 @@ def run_smolagent(
             else:
                 raise ValueError(f"Tool {tool_name} is not recognized either as a default tool or a Space.")
 
-    agent = CodeAgent(tools=available_tools, model=model, additional_authorized_imports=imports, stream_outputs=True)
+    if action_type == "code":
+        agent: MultiStepAgent = CodeAgent(
+            tools=available_tools, model=model, additional_authorized_imports=imports, stream_outputs=True
+        )
+    elif action_type == "tool_calling":
+        agent: MultiStepAgent = ToolCallingAgent(tools=available_tools, model=model, stream_outputs=True)
+    else:
+        raise ValueError(f"Unsupported action type: {action_type}")
 
     agent.run(prompt)
 
@@ -234,7 +266,7 @@ def main() -> None:
     # Check if we should run in interactive mode
     # Interactive mode is triggered when no prompt is provided
     if args.prompt is None:
-        prompt, tools, model_type, model_id, provider, api_base, api_key, imports = interactive_mode()
+        prompt, tools, model_type, model_id, provider, api_base, api_key, imports, action_type = interactive_mode()
     else:
         prompt = args.prompt
         tools = args.tools
@@ -244,6 +276,7 @@ def main() -> None:
         api_base = args.api_base
         api_key = args.api_key
         imports = args.imports
+        action_type = args.action_type
 
     run_smolagent(
         prompt,
@@ -254,6 +287,7 @@ def main() -> None:
         api_base=api_base,
         api_key=api_key,
         imports=imports,
+        action_type=action_type,
     )
 
 
