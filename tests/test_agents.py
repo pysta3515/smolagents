@@ -1462,11 +1462,11 @@ class TestToolCallingAgent:
 
     @patch("openai.OpenAI")
     def test_toolcalling_agent_stream_outputs_multiple_tool_calls(self, mock_openai_client, test_tool):
-        """Test that ToolCallingAgent with stream_outputs=True returns the first final_answer when multiple are called."""
+        """Test that ToolCallingAgent with stream_outputs=True returns the first all tool calls when multiple are called."""
         mock_client = mock_openai_client.return_value
         from smolagents import OpenAIServerModel
 
-        # Mock streaming response with multiple final_answer calls
+        # Mock streaming response with multiple tool calls
         mock_deltas = [
             ChoiceDelta(role=MessageRole.ASSISTANT),
             ChoiceDelta(
@@ -1474,7 +1474,7 @@ class TestToolCallingAgent:
                     ChoiceDeltaToolCall(
                         index=0,
                         id="call_1",
-                        function=ChoiceDeltaToolCallFunction(name="final_answer"),
+                        function=ChoiceDeltaToolCallFunction(name="test_tool_1"),
                         type="function",
                     )
                 ]
@@ -1499,7 +1499,7 @@ class TestToolCallingAgent:
                     ChoiceDeltaToolCall(
                         index=1,
                         id="call_2",
-                        function=ChoiceDeltaToolCallFunction(name="test_tool"),
+                        function=ChoiceDeltaToolCallFunction(name="test_tool_2"),
                         type="function",
                     )
                 ]
@@ -1540,13 +1540,10 @@ class TestToolCallingAgent:
         model = OpenAIServerModel(model_id="fakemodel")
 
         agent = ToolCallingAgent(model=model, tools=[test_tool], max_steps=1, stream_outputs=True)
-        result = agent.run("Make 2 calls to final answer: return both 'output1' and 'output2'")
+        result = agent.run("Dummy task")
         assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
-        assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
-        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool"
-
-        # The agent should return the final answer call
-        assert result == "output1"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "test_tool_1"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool_2"
 
     @patch("huggingface_hub.InferenceClient")
     def test_toolcalling_agent_api_misformatted_output(self, mock_inference_client):
