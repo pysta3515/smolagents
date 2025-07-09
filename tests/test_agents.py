@@ -441,9 +441,7 @@ class TestAgent:
 
             return PIL.Image.open(shared_datadir / "000000039769.png")
 
-        agent = ToolCallingAgent(
-            tools=[fake_image_generation_tool], model=FakeToolCallModelImage(), verbosity_level=10
-        )
+        agent = ToolCallingAgent(tools=[fake_image_generation_tool], model=FakeToolCallModelImage())
         output = agent.run("Make me an image.")
         assert isinstance(output, AgentImage)
         assert isinstance(agent.state["image.png"], PIL.Image.Image)
@@ -468,7 +466,7 @@ class TestAgent:
         assert output == "The image is a cat."
 
     def test_fake_code_agent(self):
-        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModel(), verbosity_level=10)
+        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModel())
         output = agent.run("What is 2 multiplied by 3.6452?")
         assert isinstance(output, float)
         assert output == 7.2904
@@ -569,7 +567,6 @@ class TestAgent:
             model=FakeCodeModelFunctionDef(),
             max_steps=2,
             additional_authorized_imports=["numpy"],
-            verbosity_level=100,
         )
         res = agent.run("ok")
         assert res[0] == 0.5
@@ -655,7 +652,7 @@ nested_answer()
             device_map="auto",
             do_sample=False,
         )
-        agent = ToolCallingAgent(model=model, tools=[weather_api], max_steps=1, verbosity_level=10)
+        agent = ToolCallingAgent(model=model, tools=[weather_api], max_steps=1)
         task = "What is the weather in Paris? "
         agent.run(task)
         assert agent.memory.steps[0].task == task
@@ -682,7 +679,6 @@ nested_answer()
             model=FakeCodeModel(),
             tools=[],
             final_answer_checks=[lambda x, y: x == 7.2904],
-            verbosity_level=1000,
         )
         output = agent.run("Dummy task.")
         assert output == 7.2904  # Check that output is correct
@@ -737,9 +733,9 @@ nested_answer()
         input_messages = first_planning_step.model_input_messages
 
         # Check message structure and content
-        assert (
-            len(input_messages) == 4
-        ), "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
+        assert len(input_messages) == 4, (
+            "First planning step should have 4 messages: system-plan-pre-update + memory + task + user-plan-post-update"
+        )
 
         # Verify system message contains current task
         system_message = input_messages[0]
@@ -748,9 +744,9 @@ nested_answer()
 
         # Verify memory message contains previous task
         memory_message = input_messages[1]
-        assert (
-            previous_task in memory_message.content[0]["text"]
-        ), f"Memory message should contain previous task: '{previous_task}'"
+        assert previous_task in memory_message.content[0]["text"], (
+            f"Memory message should contain previous task: '{previous_task}'"
+        )
 
         # Verify task message contains current task
         task_message = input_messages[2]
@@ -1053,7 +1049,7 @@ class TestMultiStepAgent:
                     raw="""I don't want to call tools today""",
                 )
 
-        agent_toolcalling = ToolCallingAgent(model=FakeJsonModelNoCall(), tools=[], max_steps=1, verbosity_level=10)
+        agent_toolcalling = ToolCallingAgent(model=FakeJsonModelNoCall(), tools=[], max_steps=1)
         with agent_toolcalling.logger.console.capture() as capture:
             agent_toolcalling.run("Dummy task")
         assert "don't" in capture.get() and "want" in capture.get()
@@ -1065,7 +1061,7 @@ class TestMultiStepAgent:
                     content="""I don't want to write an action today""",
                 )
 
-        agent_code = CodeAgent(model=FakeCodeModelNoCall(), tools=[], max_steps=1, verbosity_level=10)
+        agent_code = CodeAgent(model=FakeCodeModelNoCall(), tools=[], max_steps=1)
         with agent_code.logger.console.capture() as capture:
             agent_code.run("Dummy task")
         assert "don't" in capture.get() and "want" in capture.get()
@@ -1461,8 +1457,8 @@ class TestToolCallingAgent:
         assert agent.memory.steps[1].observations == "The weather in Paris on date:today is sunny."
 
     @patch("openai.OpenAI")
-    def test_toolcalling_agent_stream_outputs_multiple_tool_calls(self, mock_openai_client, test_tool):
-        """Test that ToolCallingAgent with stream_outputs=True returns the first all tool calls when multiple are called."""
+    def test_toolcalling_agent_stream_logs_multiple_tool_calls_bservations(self, mock_openai_client, test_tool):
+        """Test that ToolCallingAgent with stream_outputs=True logs the observations of all tool calls when multiple are called."""
         mock_client = mock_openai_client.return_value
         from smolagents import OpenAIServerModel
 
@@ -1474,16 +1470,16 @@ class TestToolCallingAgent:
                     ChoiceDeltaToolCall(
                         index=0,
                         id="call_1",
-                        function=ChoiceDeltaToolCallFunction(name="test_tool_1"),
+                        function=ChoiceDeltaToolCallFunction(name="test_tool"),
                         type="function",
                     )
                 ]
             ),
             ChoiceDelta(
-                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"an'))]
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"in'))]
             ),
             ChoiceDelta(
-                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='swer"'))]
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='put"'))]
             ),
             ChoiceDelta(
                 tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments=': "out'))]
@@ -1499,7 +1495,7 @@ class TestToolCallingAgent:
                     ChoiceDeltaToolCall(
                         index=1,
                         id="call_2",
-                        function=ChoiceDeltaToolCallFunction(name="test_tool_2"),
+                        function=ChoiceDeltaToolCallFunction(name="test_tool"),
                         type="function",
                     )
                 ]
@@ -1540,10 +1536,85 @@ class TestToolCallingAgent:
         model = OpenAIServerModel(model_id="fakemodel")
 
         agent = ToolCallingAgent(model=model, tools=[test_tool], max_steps=1, stream_outputs=True)
-        result = agent.run("Dummy task")
-        assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
-        assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "test_tool_1"
-        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "test_tool_2"
+        agent.run("Dummy task")
+        assert agent.memory.steps[1].model_output_message.tool_calls[0].function.name == "test_tool"
+        assert agent.memory.steps[1].model_output_message.tool_calls[1].function.name == "test_tool"
+        assert agent.memory.steps[1].observations == "Processed: output1\nProcessed: output2"
+
+    @patch("openai.OpenAI")
+    def test_toolcalling_agent_final_answer_cannot_be_called_with_parallel_tool_calls(
+        self, mock_openai_client, test_tool
+    ):
+        """Test that ToolCallingAgent with stream_outputs=True returns the all tool calls when multiple are called."""
+        mock_client = mock_openai_client.return_value
+
+        from smolagents import OpenAIServerModel
+
+        class ExtendedChatMessage(ChatMessage):
+            def __init__(self, *args, usage, **kwargs):
+                super().__init__(*args, **kwargs)
+
+            def model_dump(self, include=None):
+                return super().model_dump_json()
+
+        class MockChoice:
+            def __init__(self, chat_message):
+                self.message = chat_message
+
+        class MockChatCompletion:
+            def __init__(self, chat_message):
+                self.choices = [MockChoice(chat_message)]
+                self.usage = MockTokenUsage(prompt_tokens=10, completion_tokens=20)
+
+        class MockTokenUsage:
+            def __init__(self, prompt_tokens, completion_tokens):
+                self.prompt_tokens = prompt_tokens
+                self.completion_tokens = completion_tokens
+
+        from dataclasses import asdict
+
+        class ExtendedChatCompletionOutputMessage(ChatCompletionOutputMessage):
+            def __init__(self, *args, usage, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.usage = usage
+
+            def model_dump(self, include=None):
+                print("TOOL CALLS", self.tool_calls)
+                return {
+                    "role": self.role,
+                    "content": self.content,
+                    "tool_calls": [asdict(tc) for tc in self.tool_calls],
+                }
+
+        mock_client.chat.completions.create.return_value = MockChatCompletion(
+            ExtendedChatCompletionOutputMessage(
+                role=MessageRole.ASSISTANT,
+                content=None,
+                tool_calls=[
+                    ChatMessageToolCall(
+                        id="call_0",
+                        type="function",
+                        function=ChatMessageToolCallFunction(name="test_tool", arguments={"input": "out1"}),
+                    ),
+                    ChatMessageToolCall(
+                        id="1",
+                        type="function",
+                        function=ChatMessageToolCallFunction(name="final_answer", arguments={"answer": "out1"}),
+                    ),
+                ],
+                usage=MockTokenUsage(prompt_tokens=10, completion_tokens=20),
+            )
+        )
+
+        model = OpenAIServerModel(model_id="fakemodel")
+
+        agent = ToolCallingAgent(model=model, tools=[test_tool], max_steps=1)
+        agent.run("Dummy task")
+        assert agent.memory.steps[1].error is not None
+        assert (
+            "do not perform any other tool calls than the final answer tool call!"
+            in agent.memory.steps[1].error.message
+        )
 
     @patch("huggingface_hub.InferenceClient")
     def test_toolcalling_agent_api_misformatted_output(self, mock_inference_client):
@@ -1864,7 +1935,7 @@ class TestCodeAgent:
         assert "ValueError" in str(agent.memory.steps)
 
     def test_error_saves_previous_print_outputs(self):
-        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModelError(), verbosity_level=10)
+        agent = CodeAgent(tools=[PythonInterpreterTool()], model=FakeCodeModelError())
         agent.run("What is 2 multiplied by 3.6452?")
         assert "Flag!" in str(agent.memory.steps[1].observations)
 
