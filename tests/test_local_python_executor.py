@@ -1084,7 +1084,7 @@ def checks_keys(random_state):
 checks_keys(**params)
 """
         result, _ = evaluate_python_code(code, {}, state={})
-        assert result == True
+        assert result
 
     @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_can_import_scipy_if_explicitly_authorized(self):
