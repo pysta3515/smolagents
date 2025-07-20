@@ -810,14 +810,12 @@ def evaluate_call(
 
     kwargs = {}
     for keyword in call.keywords:
-        if keyword.arg is None:  # Handle **kwargs expansion
-            # This is a **kwargs expansion, merge the evaluated dict
-            expanded_kwargs = evaluate_ast(keyword.value, state, static_tools, custom_tools, authorized_imports)
-            if not isinstance(expanded_kwargs, dict):
-                raise InterpreterError(
-                    f"**kwargs expansion requires a dictionary, got {type(expanded_kwargs).__name__}"
-                )
-            kwargs.update(expanded_kwargs)
+        if keyword.arg is None:
+            # **kwargs unpacking
+            starred_dict = evaluate_ast(keyword.value, state, static_tools, custom_tools, authorized_imports)
+            if not isinstance(starred_dict, dict):
+                raise InterpreterError(f"Cannot unpack non-dict value in **kwargs: {type(starred_dict).__name__}")
+            kwargs.update(starred_dict)
         else:
             # Normal keyword argument
             kwargs[keyword.arg] = evaluate_ast(keyword.value, state, static_tools, custom_tools, authorized_imports)
