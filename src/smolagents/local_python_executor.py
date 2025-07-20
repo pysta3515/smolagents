@@ -148,11 +148,7 @@ DANGEROUS_FUNCTIONS = [
 ]
 
 
-def check_safer_result(
-    result: Any,
-    static_tools: dict[str, Callable] = None,
-    authorized_imports: list[str] = None,
-):
+def check_safer_result(result: Any, static_tools: dict[str, Callable] = None, authorized_imports: list[str] = None):
     """
     Checks if a result is safer according to authorized imports and static tools.
 
@@ -200,13 +196,7 @@ def safer_eval(func: Callable):
         custom_tools,
         authorized_imports=BASE_BUILTIN_MODULES,
     ):
-        result = func(
-            expression,
-            state,
-            static_tools,
-            custom_tools,
-            authorized_imports=authorized_imports,
-        )
+        result = func(expression, state, static_tools, custom_tools, authorized_imports=authorized_imports)
         check_safer_result(result, static_tools, authorized_imports)
         return result
 
@@ -519,38 +509,20 @@ def evaluate_class_def(
             # Handle target types for annotation
             if isinstance(target, ast.Name):
                 # Simple variable annotation like "x: int"
-                annotation = evaluate_ast(
-                    stmt.annotation,
-                    state,
-                    static_tools,
-                    custom_tools,
-                    authorized_imports,
-                )
+                annotation = evaluate_ast(stmt.annotation, state, static_tools, custom_tools, authorized_imports)
                 class_dict.setdefault("__annotations__", {})[target.id] = annotation
                 # Assign value if provided
                 if stmt.value:
                     class_dict[target.id] = value
             elif isinstance(target, ast.Attribute):
                 # Attribute annotation like "obj.attr: int"
-                obj = evaluate_ast(
-                    target.value,
-                    class_dict,
-                    static_tools,
-                    custom_tools,
-                    authorized_imports,
-                )
+                obj = evaluate_ast(target.value, class_dict, static_tools, custom_tools, authorized_imports)
                 # If there's a value assignment, set the attribute
                 if stmt.value:
                     setattr(obj, target.attr, value)
             elif isinstance(target, ast.Subscript):
                 # Subscript annotation like "dict[key]: int"
-                container = evaluate_ast(
-                    target.value,
-                    class_dict,
-                    static_tools,
-                    custom_tools,
-                    authorized_imports,
-                )
+                container = evaluate_ast(target.value, class_dict, static_tools, custom_tools, authorized_imports)
                 index = evaluate_ast(target.slice, state, static_tools, custom_tools, authorized_imports)
                 # If there's a value assignment, set the item
                 if stmt.value:
@@ -563,13 +535,7 @@ def evaluate_class_def(
                 if isinstance(target, ast.Name):
                     class_dict[target.id] = value
                 elif isinstance(target, ast.Attribute):
-                    obj = evaluate_ast(
-                        target.value,
-                        class_dict,
-                        static_tools,
-                        custom_tools,
-                        authorized_imports,
-                    )
+                    obj = evaluate_ast(target.value, class_dict, static_tools, custom_tools, authorized_imports)
                     setattr(obj, target.attr, value)
         elif isinstance(stmt, ast.Pass):
             pass
@@ -600,14 +566,7 @@ def evaluate_annassign(
     if annassign.value:
         value = evaluate_ast(annassign.value, state, static_tools, custom_tools, authorized_imports)
         # Set the value for the target
-        set_value(
-            annassign.target,
-            value,
-            state,
-            static_tools,
-            custom_tools,
-            authorized_imports,
-        )
+        set_value(annassign.target, value, state, static_tools, custom_tools, authorized_imports)
         return value
     # For declarations without values (x: int), just return None
     return None
@@ -920,11 +879,7 @@ def evaluate_name(
     if name.id in state:
         return state[name.id]
     elif name.id in static_tools:
-        return safer_func(
-            static_tools[name.id],
-            static_tools=static_tools,
-            authorized_imports=authorized_imports,
-        )
+        return safer_func(static_tools[name.id], static_tools=static_tools, authorized_imports=authorized_imports)
     elif name.id in custom_tools:
         return custom_tools[name.id]
     elif name.id in ERRORS:
@@ -1688,11 +1643,7 @@ class LocalPythonExecutor(PythonExecutor):
 
     def send_tools(self, tools: dict[str, Tool]):
         # Combine agent tools, base Python tools, and additional Python functions
-        self.static_tools = {
-            **tools,
-            **BASE_PYTHON_TOOLS.copy(),
-            **self.additional_functions,
-        }
+        self.static_tools = {**tools, **BASE_PYTHON_TOOLS.copy(), **self.additional_functions}
 
 
 __all__ = ["evaluate_python_code", "LocalPythonExecutor"]
