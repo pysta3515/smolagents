@@ -116,7 +116,7 @@ class FakeToolCallModel(Model):
         if len(messages) < 3:
             return ChatMessage(
                 role=MessageRole.ASSISTANT,
-                content="",
+                content="I will call the python interpreter.",
                 tool_calls=[
                     ChatMessageToolCall(
                         id="call_0",
@@ -130,7 +130,7 @@ class FakeToolCallModel(Model):
         else:
             return ChatMessage(
                 role=MessageRole.ASSISTANT,
-                content="",
+                content="I will return the final answer.",
                 tool_calls=[
                     ChatMessageToolCall(
                         id="call_1",
@@ -421,10 +421,7 @@ class TestAgent:
         assert "7.2904" in output
         assert agent.memory.steps[0].task == "What is 2 multiplied by 3.6452?"
         assert "7.2904" in agent.memory.steps[1].observations
-        assert (
-            agent.memory.steps[2].model_output
-            == "Tool call call_1: calling 'final_answer' with arguments: {'answer': '7.2904'}"
-        )
+        assert agent.memory.steps[2].model_output == "I will return the final answer."
 
     def test_toolcalling_agent_handles_image_tool_outputs(self, shared_datadir):
         import PIL.Image
@@ -615,7 +612,6 @@ class TestAgent:
         agent.replay()
 
         str_output = agent_logger.console.export_text()
-        assert "Tool call" in str_output
         assert "arguments" in str_output
 
     def test_code_nontrivial_final_answer_works(self):
