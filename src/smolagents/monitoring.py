@@ -131,7 +131,7 @@ class AgentLogger:
     def __init__(self, level: LogLevel = LogLevel.INFO, console: Console | None = None):
         self.level = level
         if console is None:
-            self.console = Console()
+            self.console = Console(highlight=False)
         else:
             self.console = console
 
@@ -190,7 +190,7 @@ class AgentLogger:
     def log_rule(self, title: str, level: int = LogLevel.INFO) -> None:
         self.log(
             Rule(
-                "[bold white]" + title,
+                "[bold]" + title,
                 characters="━",
                 style=YELLOW_HEX,
             ),
